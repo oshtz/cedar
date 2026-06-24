@@ -1,0 +1,15 @@
+{
+  "identifier": "default",
+  "description": "Default permissions for the local desktop console.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
+    "opener:allow-open-url",
+    "opener:allow-default-urls"
+  ]
+}

@@ -1,0 +1,424 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v* tag to release, matching package/Tauri/Cargo version
+        required: true
+        default: v0.1.0
+      draft:
+        description: Create or update the GitHub Release as a draft
+        type: boolean
+        default: true
+      require_windows_signing:
+        description: Fail if Windows Authenticode signing secrets are missing
+        type: boolean
+        default: false
+      require_controlled_enigma_download:
+        description: Require ENIGMA_VIRTUAL_BOX_INSTALLER_SHA256 when installing Enigma
+        type: boolean
+        default: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Validate Release Inputs
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve release tag
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ inputs.tag }}"
+          } else {
+            $tag = "${{ github.ref_name }}"
+          }
+
+          if ($tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            throw "Release tag must be a semver v* tag, got $tag"
+          }
+
+          git rev-parse "refs/tags/$tag" | Out-Null
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Release metadata check
+        run: node scripts/release-check.mjs --check-workflow --tag "$env:RELEASE_TAG"
+
+      - name: Frontend validation
+        run: npm run validate
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+      - name: Rust format
+        run: cargo fmt --check
+        working-directory: src-tauri
+
+      - name: Rust tests
+        run: cargo test --locked
+        working-directory: src-tauri
+
+      - name: Rust check
+        run: cargo check --locked
+        working-directory: src-tauri
+
+  windows:
+    name: Windows Portable EXE
+    needs: validate
+    runs-on: windows-latest
+
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
+      ENIGMA_VIRTUAL_BOX_INSTALLER_URL: ${{ vars.ENIGMA_VIRTUAL_BOX_INSTALLER_URL }}
+      ENIGMA_VIRTUAL_BOX_INSTALLER_SHA256: ${{ vars.ENIGMA_VIRTUAL_BOX_INSTALLER_SHA256 }}
+      EVB_INSTALLER_SHA256: ${{ vars.EVB_INSTALLER_SHA256 }}
+      WINDOWS_CODESIGN_CERTIFICATE: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE }}
+      WINDOWS_CODESIGN_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+      REQUIRE_WINDOWS_SIGNING: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.require_windows_signing) || 'false' }}
+      REQUIRE_CONTROLLED_ENIGMA_DOWNLOAD: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.require_controlled_enigma_download) || 'true' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows app executable
+        run: npm run desktop:build:no-bundle
+
+      - name: Resolve artifact names
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          "CEDAR_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "WINDOWS_DIR=dist-release/windows" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "WINDOWS_APP_EXE=src-tauri/target/release/cedar.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "WINDOWS_ZIP=dist-release/windows/Cedar_${version}_windows-x64.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "WINDOWS_PORTABLE=dist-release/windows/Cedar_${version}_windows-x64-portable.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Sign app executable when configured
+        shell: pwsh
+        run: |
+          $requireSigning = [System.Convert]::ToBoolean("${env:REQUIRE_WINDOWS_SIGNING}")
+          $signArgs = @{
+            Path = $env:WINDOWS_APP_EXE
+          }
+          if ($requireSigning) {
+            $signArgs.Require = $true
+          }
+          & ./scripts/windows-sign.ps1 @signArgs
+
+      - name: Create Windows zip bundle
+        shell: pwsh
+        run: |
+          $bundleDir = "dist-release/windows/Cedar_${env:CEDAR_VERSION}_windows-x64"
+          New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
+          Copy-Item -LiteralPath $env:WINDOWS_APP_EXE -Destination (Join-Path $bundleDir "Cedar.exe") -Force
+          Get-ChildItem -LiteralPath (Split-Path -Parent $env:WINDOWS_APP_EXE) -File -Filter "*.dll" |
+            ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $bundleDir $_.Name) -Force }
+          Compress-Archive -Path (Join-Path $bundleDir "*") -DestinationPath $env:WINDOWS_ZIP -Force
+
+      - name: Create portable EXE
+        shell: pwsh
+        run: |
+          $requireControlled = [System.Convert]::ToBoolean("${env:REQUIRE_CONTROLLED_ENIGMA_DOWNLOAD}")
+          $portableArgs = @{
+            InputExe = $env:WINDOWS_APP_EXE
+            OutputExe = $env:WINDOWS_PORTABLE
+            ProjectFile = (Join-Path $env:RUNNER_TEMP "cedar-portable.evb")
+            StagingDir = (Join-Path $env:RUNNER_TEMP "cedar-portable-staging")
+          }
+          if ($requireControlled) {
+            $portableArgs.RequireControlledDownload = $true
+          }
+          & ./scripts/windows-portable.ps1 @portableArgs
+
+      - name: Sign portable EXE when configured
+        shell: pwsh
+        run: |
+          $requireSigning = [System.Convert]::ToBoolean("${env:REQUIRE_WINDOWS_SIGNING}")
+          $signArgs = @{
+            Path = $env:WINDOWS_PORTABLE
+          }
+          if ($requireSigning) {
+            $signArgs.Require = $true
+          }
+          & ./scripts/windows-sign.ps1 @signArgs
+
+      - name: Generate Windows checksums
+        run: node scripts/release-artifacts.mjs checksum --platform windows --dir "$env:WINDOWS_DIR"
+
+      - name: Verify Windows artifacts
+        run: node scripts/release-artifacts.mjs verify --platform windows --dir "$env:WINDOWS_DIR" --version "$env:CEDAR_VERSION"
+
+      - name: Upload Windows release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cedar-windows-release
+          path: |
+            dist-release/windows/Cedar_*_windows-x64-portable.exe
+            dist-release/windows/Cedar_*_windows-x64.zip
+            dist-release/windows/SHA256SUMS-windows.txt
+          if-no-files-found: error
+
+  macos:
+    name: Signed macOS DMG
+    needs: validate
+    runs-on: macos-latest
+
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Apple release secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is required for signed and notarized macOS releases"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Import Apple Developer certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          CERTIFICATE_PATH="$RUNNER_TEMP/cedar-certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/cedar-signing.keychain-db"
+          KEYCHAIN_PASSWORD="${KEYCHAIN_PASSWORD:-$(uuidgen)}"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Validate notarization credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun notarytool store-credentials "cedar-release" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --validate
+
+      - name: Build signed and notarized macOS app
+        run: npm run tauri -- build --target universal-apple-darwin --bundles app,dmg --ci
+
+      - name: Collect macOS artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          OUT_DIR="dist-release/macos"
+          mkdir -p "$OUT_DIR"
+          APP_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name 'Cedar.app' -type d | head -n 1)"
+          DMG_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -type f | head -n 1)"
+          if [ -z "$APP_PATH" ] || [ -z "$DMG_PATH" ]; then
+            echo "::error::Expected macOS .app and .dmg artifacts were not produced"
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          spctl --assess --type execute --verbose=2 "$APP_PATH"
+          xcrun notarytool submit "$DMG_PATH" --keychain-profile "cedar-release" --wait
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
+          ditto -c -k --keepParent "$APP_PATH" "$OUT_DIR/Cedar_${VERSION}_macos.app.zip"
+          cp "$DMG_PATH" "$OUT_DIR/Cedar_${VERSION}_macos.dmg"
+          echo "CEDAR_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "MACOS_DIR=$OUT_DIR" >> "$GITHUB_ENV"
+
+      - name: Generate macOS checksums
+        run: node scripts/release-artifacts.mjs checksum --platform macos --dir "$MACOS_DIR"
+
+      - name: Verify macOS artifacts
+        run: node scripts/release-artifacts.mjs verify --platform macos --dir "$MACOS_DIR" --version "$CEDAR_VERSION"
+
+      - name: Upload macOS release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cedar-macos-release
+          path: |
+            dist-release/macos/Cedar_*_macos.dmg
+            dist-release/macos/Cedar_*_macos.app.zip
+            dist-release/macos/SHA256SUMS-macos.txt
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - windows
+      - macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cedar-*-release
+          path: dist-release
+          merge-multiple: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            DRAFT="${{ inputs.draft }}"
+          else
+            TAG="${{ github.ref_name }}"
+            DRAFT="true"
+          fi
+          VERSION="$(node -p "require('./package.json').version")"
+          git rev-parse "refs/tags/$TAG" >/dev/null
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "CEDAR_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_DRAFT=$DRAFT" >> "$GITHUB_ENV"
+
+      - name: Verify release artifact set
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release-check.mjs --check-workflow --tag "$RELEASE_TAG"
+          node scripts/release-artifacts.mjs verify --platform windows --dir dist-release --version "$CEDAR_VERSION"
+          node scripts/release-artifacts.mjs verify --platform macos --dir dist-release --version "$CEDAR_VERSION"
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes_file="$RUNNER_TEMP/cedar-release-notes.md"
+          cat > "$notes_file" <<NOTES
+          Cedar $CEDAR_VERSION
+
+          Artifacts:
+          - Cedar_${CEDAR_VERSION}_macos.dmg
+          - Cedar_${CEDAR_VERSION}_macos.app.zip
+          - Cedar_${CEDAR_VERSION}_windows-x64-portable.exe
+          - Cedar_${CEDAR_VERSION}_windows-x64.zip
+          - SHA256SUMS-macos.txt
+          - SHA256SUMS-windows.txt
+          NOTES
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "Cedar $CEDAR_VERSION" --notes-file "$notes_file" --draft="$RELEASE_DRAFT"
+          else
+            release_flags=()
+            if [ "$RELEASE_DRAFT" = "true" ]; then
+              release_flags+=(--draft)
+            fi
+            gh release create "$RELEASE_TAG" --verify-tag --title "Cedar $CEDAR_VERSION" --notes-file "$notes_file" "${release_flags[@]}"
+          fi
+
+          gh release upload "$RELEASE_TAG" dist-release/* --clobber
