@@ -10,9 +10,26 @@ param(
 $ErrorActionPreference = "Stop"
 
 $executable = (Resolve-Path -LiteralPath $Path).Path
-$versionOutput = & $executable --version
-if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch '^Cedar \d+\.\d+\.\d+') {
-  throw "Packaged executable did not report a valid version: $versionOutput"
+$version = (Get-Item -LiteralPath $executable).VersionInfo.ProductVersion
+if ($version -notmatch '^\d+\.\d+\.\d+') {
+  throw "Packaged executable does not contain a valid product version: $version"
+}
+
+$stream = [IO.File]::OpenRead($executable)
+$reader = [IO.BinaryReader]::new($stream)
+try {
+  $stream.Position = 0x3c
+  $peHeaderOffset = $reader.ReadInt32()
+  $stream.Position = $peHeaderOffset + 24 + 68
+  $subsystem = $reader.ReadUInt16()
+}
+finally {
+  $reader.Dispose()
+  $stream.Dispose()
+}
+
+if ($subsystem -ne 2) {
+  throw "Packaged executable uses PE subsystem $subsystem instead of the Windows GUI subsystem."
 }
 
 $process = $null
@@ -27,7 +44,7 @@ try {
     throw "Packaged Cedar exited during its startup smoke test with code $($process.ExitCode)."
   }
 
-  Write-Host "Packaged GPUI runtime stayed healthy for $StartupSeconds seconds ($versionOutput)."
+  Write-Host "Packaged GPUI runtime stayed healthy for $StartupSeconds seconds (Cedar $version, GUI subsystem)."
 }
 finally {
   if ($process -and -not $process.HasExited) {
