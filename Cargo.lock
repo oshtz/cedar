@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "cedar"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -813,9 +813,12 @@ dependencies = [
  "keyring",
  "reqwest",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
+ "windows 0.61.3",
  "winresource",
 ]
 

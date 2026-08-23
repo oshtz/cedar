@@ -23,8 +23,24 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Cedar release executable was not found at $executable"
 }
 
-$availableScenarios = @(& $executable --list-visual-qa)
-if ($LASTEXITCODE -ne 0 -or $availableScenarios.Count -eq 0) {
+$scenarioOutput = Join-Path ([IO.Path]::GetTempPath()) "cedar-visual-qa-$([guid]::NewGuid().ToString('N')).txt"
+try {
+    $scenarioProcess = Start-Process `
+        -FilePath $executable `
+        -ArgumentList "--list-visual-qa" `
+        -RedirectStandardOutput $scenarioOutput `
+        -PassThru `
+        -Wait
+    $availableScenarios = if (Test-Path -LiteralPath $scenarioOutput) {
+        @(Get-Content -LiteralPath $scenarioOutput | Where-Object { $_.Trim() })
+    } else {
+        @()
+    }
+}
+finally {
+    Remove-Item -LiteralPath $scenarioOutput -Force -ErrorAction SilentlyContinue
+}
+if ($scenarioProcess.ExitCode -ne 0 -or $availableScenarios.Count -eq 0) {
     throw "Cedar did not return any visual QA scenarios."
 }
 $selectedScenarios = if ($null -ne $Scenario -and $Scenario.Count -gt 0) {

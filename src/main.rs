@@ -7,6 +7,7 @@ mod audit;
 mod backend;
 mod design;
 mod ui;
+mod updater;
 
 use std::{borrow::Cow, sync::Arc};
 
@@ -78,9 +79,18 @@ fn main() {
         } else {
             ui::open_main_window(cx, backend.clone(), runtime.clone())
         };
-        if let Err(error) = result {
-            eprintln!("failed to open Cedar window: {error:#}");
-            cx.quit();
+        match result {
+            Ok(()) => {
+                if visual_qa.is_none()
+                    && let Err(error) = updater::complete_update_health()
+                {
+                    eprintln!("failed to report a healthy Cedar update: {error:#}");
+                }
+            }
+            Err(error) => {
+                eprintln!("failed to open Cedar window: {error:#}");
+                cx.quit();
+            }
         }
         cx.activate(true);
     });
