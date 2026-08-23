@@ -1,17 +1,10 @@
-node_modules/
-dist/
 dist-release/
-src-tauri/target/
-src-tauri/gen/
-src-tauri/icons/android/
-src-tauri/icons/ios/
+target/
 .env
 .env.*
 !.env.example
 *.log
-.playwright-mcp/
-.vite/
-.tauri-dev-*.json
+artifacts/visual-qa/
 
 # claude.ai/design (design-sync) — local only, never tracked
 .design-sync/

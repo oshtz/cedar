@@ -1,138 +1,166 @@
-<h1>
-  <img src="src-tauri/icons/icon.png" alt="Cedar app icon" width="28" height="28">
-  Cedar
-</h1>
+# Cedar
 
-<p>
-  <strong>A local-first Cloudflare audit-to-dev-report app for developers who want inventory, drift, coverage, and cost signals without pretending the dashboard already answers that.</strong>
-</p>
+<img src="assets/icon.png" alt="Cedar app icon" width="64" height="64">
 
-<p>
-  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-000000?style=flat&logo=tauri&logoColor=white">
-  <img alt="React" src="https://img.shields.io/badge/React-000000?style=flat&logo=react&logoColor=white">
-  <img alt="Rust" src="https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white">
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-000000?style=flat&logo=typescript&logoColor=white">
-  <img alt="Vite" src="https://img.shields.io/badge/Vite-000000?style=flat&logo=vite&logoColor=white">
-  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-000000?style=flat&logo=sqlite&logoColor=white">
-  <img alt="Cloudflare" src="https://img.shields.io/badge/Cloudflare-000000?style=flat&logo=cloudflare&logoColor=white">
-</p>
+A local-first Cloudflare audit and developer-report app, built as a native Rust desktop application with GPUI.
 
-Cedar is a personal learning project built around a real Cloudflare visibility problem. It turns Cloudflare inventory, usage, sync health, recent drift, observability coverage, and Workers cost projection into a desktop audit view and a paste-ready developer report without sending your token or snapshots to a hosted service.
+Cedar turns Cloudflare inventory, usage, sync health, recent drift, observability coverage, and Workers cost projections into an operational view and a paste-ready Markdown report. Credentials and snapshots stay local.
 
-## Why this exists
+## Stack
 
-I built Cedar to learn the parts of desktop software that only show up in a real app: Tauri, a Rust backend, React UI state, OS keychain storage, local SQLite snapshots, Cloudflare REST/GraphQL edge cases, and signed desktop release packaging.
+- Rust 2024
+- GPUI with `gpui-component`
+- Embedded Geist and Geist Mono typography
+- Tokio and Reqwest for Cloudflare API work
+- SQLite for snapshots and preferences
+- The operating-system keychain for the Cloudflare token
 
-The practical goal is narrower: run a local account audit, get a developer report, and stop treating six dashboard tabs as a system view.
+There is no browser runtime, WebView, JavaScript, React, Vite, or Tauri layer.
 
-## Who this is for
+## Features
 
-- Developers running several Cloudflare resources who want a developer report instead of another dashboard tab
-- People studying a Tauri + Rust + React app that talks to a large external API and stores data locally
-- Not a fit for teams that need invoice-grade billing, multi-user workflows, guaranteed maintenance, or full observability across every Cloudflare plan
-
-## Status
-
-Personal learning project. Issues and forks are welcome, but I make no support or roadmap promises.
-
-## What it does
-
-- Lists accounts, zones, Workers, Pages, D1, R2, and KV
-- Produces a local account audit with actionable findings and recent snapshot changes
-- Copies a Markdown developer report for issues, PRs, and handoff notes
-- Shows Workers, zone, D1, R2, and KV usage across `24h`, `7d`, and `30d`
-- Surfaces Audit Logs, Logpush job coverage, Workers Observability, and zone security/event summaries when scoped
-- Shows collector diagnostics for Cloudflare API calls, failures, latency, rate-limit headers, and Ray IDs
-- Tracks health per Cloudflare area so one API failure does not hide everything else
-- Keeps recent snapshots in local SQLite for history and faster reloads
-- Estimates Workers Paid usage from analytics-derived activity
-- Shows Worker binding links only when Cloudflare returns metadata that matches discovered resources
+- Accounts, zones, Workers, Pages, D1, R2, and KV inventory
+- Local account audits with actionable findings
+- Snapshot comparison and recent-change reporting
+- Markdown developer-report copy
+- Workers, zone, D1, R2, and KV usage for `24h`, `7d`, and `30d`
+- Audit Logs, Logpush, Workers Observability, and zone security signals when permitted
+- Per-collector API diagnostics, latency, rate-limit headers, failures, and Ray IDs
+- Analytics-derived Workers Paid cost projection
+- Graceful partial results when Cloudflare scopes or plan access are limited
 
 ## Run
 
-```powershell
-npm install
-npm run desktop
-```
-
-For UI-only development:
+Install the stable Rust toolchain, then:
 
 ```powershell
-npm run dev
+cargo run
 ```
 
-Live Cloudflare access requires the Tauri desktop runtime.
+The first build compiles GPUI and its graphics stack, so it takes longer than later builds.
 
-## Cloudflare Coverage
+## Validate
 
-Cedar paginates Cloudflare REST list collectors for accounts, Workers, D1, R2, KV, zones, Audit Logs, and Logpush jobs. Pages projects are fetched without explicit `page` or `per_page` options because Cloudflare can reject those list options for that endpoint. Zone GraphQL analytics run in batches of 10 across every discovered zone. Accounts with many zones will make more Cloudflare API calls, and Cloudflare plan/token limits can still make individual datasets unavailable. A defensive 100-page REST guard fails the affected collector loudly instead of silently truncating large accounts.
+```powershell
+cargo fmt --check
+cargo test --locked
+cargo check --locked
+```
 
-Cloudflare's retired Zone Analytics REST endpoint is not used; Cedar relies on current GraphQL datasets. Security Events use `firewallEventsAdaptiveGroups` first and fall back to raw `firewallEventsAdaptive` rows when Cloudflare denies the aggregate path. Traffic-level Security Analytics still uses `httpRequestsAdaptiveGroups`.
+Build an optimized native executable:
 
-Cedar only stores the connected token locally in the OS keychain and stores snapshots in local SQLite.
+```powershell
+cargo build --release --locked
+```
 
-## Token Scopes
+On Windows, the result is `target/release/cedar.exe` and has no WebView runtime dependency.
 
-Cedar can run in two token modes:
+Build the complete Windows release artifact set locally:
 
-| Mode | Scopes | What to expect |
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+```
+
+That command builds the optimized GPUI executable, creates a standalone `.exe` and a `.zip`,
+generates SHA-256 checksums, verifies the archive, and launches the packaged native app for a short
+startup smoke test. Artifacts are written to `dist-release/windows/`.
+
+## Release
+
+GitHub Actions builds native Windows x64 and universal macOS releases from `v*` tags. The pipeline
+validates that the tag exactly matches the version in `Cargo.toml`, runs the Rust quality gates,
+signs when configured, packages the app, verifies every checksum, and creates a draft GitHub
+Release. There is no Tauri bundler, updater manifest, JavaScript build, WebView payload, or Enigma
+portable wrapper in the release path.
+
+Release assets:
+
+- `Cedar_<version>_windows-x64.exe`
+- `Cedar_<version>_windows-x64.zip`
+- `SHA256SUMS-windows.txt`
+- `Cedar_<version>_macos.dmg`
+- `Cedar_<version>_macos.app.zip`
+- `SHA256SUMS-macos.txt`
+
+See [RELEASING.md](RELEASING.md) for the tag, signing, notarization, verification, and publishing
+checklist.
+
+### Visual QA
+
+Cedar includes an offline visual-QA mode backed by deterministic fixture data and an in-memory
+database. Capture every major surface in dark and light themes at the minimum, standard, and wide
+window presets:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/visual-qa.ps1
+```
+
+Run a focused capture while iterating:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/visual-qa.ps1 `
+  -Scenario shortcuts `
+  -Theme dark `
+  -Viewport minimum `
+  -SkipBuild
+```
+
+Captures and their SHA-256 manifest are written to `artifacts/visual-qa/`. The capture runner opens
+and foregrounds each native window briefly so GPU-rendered GPUI content is captured accurately.
+List or launch fixture states directly with:
+
+```powershell
+target/release/cedar.exe --list-visual-qa
+target/release/cedar.exe --visual-qa workers-inspector --theme light --viewport 1440x960
+```
+
+## Data and credentials
+
+Cedar preserves its existing local data contracts:
+
+- Database: the platform local-data directory under `Cedar/cedar.sqlite3`
+- Keychain service: `cedar`
+- Keychain entry: `cloudflare-api-token`
+
+Preferences that previously lived in browser local storage now live in the SQLite configuration table.
+
+## Cloudflare coverage
+
+Cedar paginates Cloudflare REST collectors for accounts, Workers, D1, R2, KV, zones, Audit Logs, and Logpush jobs. Pages projects are fetched without explicit pagination options because Cloudflare may reject them for that endpoint. Zone GraphQL analytics run in batches across discovered zones.
+
+Cedar uses current GraphQL datasets instead of the retired Zone Analytics REST endpoint. Security Events use `firewallEventsAdaptiveGroups` first and fall back to raw `firewallEventsAdaptive` rows when necessary.
+
+### Token scopes
+
+| Mode | Scopes | Result |
 | --- | --- | --- |
-| Minimal read-only | Account Settings Read, Account Analytics Read, Workers Scripts Read, Cloudflare Pages Read, Zone Read, Zone Analytics Read, Audit Logs Read, D1 Read, Workers R2 Storage Read, Workers KV Storage Read | Inventory, usage, zones, audit logs, and local cache. Logpush and Workers Observability panels may show scoped gaps. |
-| Full observability | Minimal scopes plus Logs Edit and Workers Observability Edit | Adds account/zone Logpush inventory, Workers Observability keys, destinations, and telemetry checks. |
+| Minimal read-only | Account Settings Read, Account Analytics Read, Workers Scripts Read, Cloudflare Pages Read, Zone Read, Zone Analytics Read, Audit Logs Read, D1 Read, Workers R2 Storage Read, Workers KV Storage Read | Inventory, usage, zones, audit logs, and local cache |
+| Full observability | Minimal scopes plus Logs Edit and Workers Observability Edit | Adds Logpush inventory, Workers Observability keys, destinations, and telemetry checks |
 
-Cedar's token setup lets you open Cloudflare's token form in either mode. Full observability pre-fills:
+Cloudflare write-gates some read-like observability endpoints. Logpush inventory requires Logs Edit, and Workers Observability telemetry requires Workers Observability Edit.
 
-- Account Settings Read, Account Analytics Read, Workers Scripts Read, Workers Observability Edit
-- Cloudflare Pages Read, Zone Read, Zone Analytics Read, Logs Edit, Audit Logs Read
-- D1 Read, Workers R2 Storage Read, Workers KV Storage Read
+## Layout
 
-Cloudflare token-template URLs use `edit` for permissions the dashboard labels as write/edit. Cedar requests those only where Cloudflare write-gates read-like observability endpoints. Minimal read-only mode omits Logs Edit and Workers Observability Edit.
+```text
+src/main.rs       GPUI application entry point
+src/ui.rs         Native window, state, and interface
+src/backend.rs    Cloudflare collectors, keychain, and SQLite
+src/audit.rs      Audit findings, snapshot diff, and report generation
+assets/           App icons and packaging assets
+scripts/          Native packaging, signing, smoke-test, and visual-QA tooling
+```
 
-- Logpush job inventory requires Logs Edit/Write, even for listing jobs.
-- Workers Observability telemetry queries require Workers Observability Edit/Write.
+## Status and limits
 
-When Cedar is already connected to an account, the token button opens Cloudflare's account token form. Account tokens require permission to create account-owned tokens, typically Super Administrator access. If you use the first-run user token form instead, confirm that Account scopes include Logs Edit and that Zone scopes apply to all monitored zones with Zone Analytics Read and Logs Edit. Cloudflare can show account-level Logs and zone-level Logs as separate rows; Cedar needs both rows for full account and zone Logpush inventory.
+Cedar is a personal learning project. Issues and forks are welcome, but there are no support or roadmap promises.
+
+- Cost is a Workers Paid projection, not invoice-grade billing.
+- Cedar does not call Cloudflare's gated billing usage APIs.
+- Advanced collectors degrade gracefully when the token, plan, or account cannot access a dataset.
+- GPUI is still pre-1.0, so framework API upgrades may require code changes.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
 
-## Scripts
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start Vite at `127.0.0.1:5188` |
-| `npm run desktop` | Start the Tauri desktop app |
-| `npm run typecheck` | Type-check the frontend without emitting files |
-| `npm run lint` | Run the frontend lint/type gate |
-| `npm test` | Run frontend unit tests |
-| `npm run build` | Type-check and build the frontend |
-| `npm run preview` | Preview the built frontend at `127.0.0.1:4173` |
-| `npm run desktop:build` | Package the desktop app |
-| `npm run desktop:build:no-bundle` | Build the Windows app executable without installers for portable packaging |
-| `npm run release:check` | Verify release metadata, version alignment, and release workflow shape |
-| `npm run validate` | Run the frontend lint, tests, and build gates |
-
-Rust validation:
-
-```powershell
-cd src-tauri
-cargo fmt --check
-cargo test
-cargo check
-```
-
-## Layout
-
-```text
-src/              React UI
-src-tauri/src/    Rust commands, Cloudflare collectors, keychain, SQLite
-src-tauri/icons/  App icons and platform assets
-public/           Static frontend assets
-```
-
-## Limits
-
-- Cost is a Workers Paid projection, not invoice-grade billing.
-- Cedar does not call Cloudflare's gated billing usage APIs.
-- Advanced observability collectors degrade gracefully when the token, plan, or account has no access to a dataset.
+Geist font files are distributed under the SIL Open Font License 1.1. See `assets/fonts/OFL-Geist.txt`.
