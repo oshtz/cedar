@@ -28,6 +28,7 @@ There is no browser runtime, WebView, JavaScript, React, Vite, or Tauri layer.
 - Per-collector API diagnostics, latency, rate-limit headers, failures, and Ray IDs
 - Analytics-derived Workers Paid cost projection
 - Graceful partial results when Cloudflare scopes or plan access are limited
+- Native GitHub release updates with SHA-256 verification and automatic rollback
 
 ## Run
 
@@ -70,8 +71,9 @@ startup smoke test. Artifacts are written to `dist-release/windows/`.
 GitHub Actions builds native Windows x64 and universal macOS releases from `v*` tags. The pipeline
 validates that the tag exactly matches the version in `Cargo.toml`, runs the Rust quality gates,
 signs when configured, packages the app, verifies every checksum, and creates a draft GitHub
-Release. There is no Tauri bundler, updater manifest, JavaScript build, WebView payload, or Enigma
-portable wrapper in the release path.
+Release. Cedar's native updater consumes these existing release assets and checksum manifests
+directly; there is no Tauri bundler, JavaScript build, WebView payload, or Enigma portable wrapper
+in the release path.
 
 Release assets:
 
@@ -123,6 +125,8 @@ Cedar preserves its existing local data contracts:
 - Keychain entry: `cloudflare-api-token`
 
 Preferences that previously lived in browser local storage now live in the SQLite configuration table.
+Verified update downloads and rollback diagnostics live under `Cedar/updates` in the same platform
+local-data directory.
 
 ## Cloudflare coverage
 
@@ -146,6 +150,7 @@ src/main.rs       GPUI application entry point
 src/ui.rs         Native window, state, and interface
 src/backend.rs    Cloudflare collectors, keychain, and SQLite
 src/audit.rs      Audit findings, snapshot diff, and report generation
+src/updater.rs    Native release discovery, verification, restart, and rollback
 assets/           App icons and packaging assets
 scripts/          Native packaging, signing, smoke-test, and visual-QA tooling
 ```

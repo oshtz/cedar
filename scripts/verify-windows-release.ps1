@@ -89,6 +89,7 @@ try {
 
   if (-not $SkipSmokeTest) {
     & (Join-Path $PSScriptRoot "smoke-windows.ps1") -Path $zippedExecutable
+    & (Join-Path $PSScriptRoot "smoke-window-controls.ps1") -Path $zippedExecutable
   }
 }
 finally {

@@ -10,8 +10,8 @@ use gpui::{
     Entity, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels, Point,
     Render, ScrollDelta, ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas, div,
-    ease_out_quint, img, point, px, size,
+    Styled, Subscription, WeakEntity, Window, WindowBounds, WindowControlArea, WindowOptions,
+    actions, canvas, div, ease_out_quint, img, point, px, size,
 };
 use gpui_component::{
     Disableable, Icon, IconName, Root, Sizable, Theme, ThemeMode, TitleBar, WindowExt,
@@ -38,6 +38,7 @@ use crate::{
     },
     backend::{Account, Backend, ConnectionState, DashboardSnapshot, ResourceRow},
     design::{FONT_MONO, Palette, apply_component_theme, color},
+    updater::{self, UpdateStatus},
 };
 const THEME_KEY: &str = "gpui_theme";
 const SIDEBAR_COLLAPSED_KEY: &str = "sidebar_collapsed";
@@ -46,6 +47,7 @@ const INSPECTOR_WIDTH_KEY: &str = "inspector_width";
 const REDUCED_MOTION_KEY: &str = "reduced_motion";
 const WORKSPACE_STATE_KEY: &str = "workspace_state_v1";
 const WINDOW_STATE_KEY: &str = "window_state_v1";
+const AUTOMATIC_UPDATE_CHECKS_KEY: &str = "automatic_update_checks";
 const INSPECTOR_HISTORY_LIMIT: usize = 50;
 const TOPOLOGY_NODE_WIDTH: f32 = 176.;
 const TOPOLOGY_NODE_HEIGHT: f32 = 62.;
@@ -921,6 +923,8 @@ struct CedarApp {
     sidebar_collapsed: bool,
     dark: bool,
     reduced_motion: bool,
+    automatic_update_checks: bool,
+    update_status: UpdateStatus,
     workspace_state_fingerprint: String,
     workspace_save_generation: u64,
     window_save_generation: u64,
@@ -1027,6 +1031,16 @@ impl CedarApp {
                 .flatten()
                 .as_deref()
                 == Some("true");
+        let automatic_update_checks = visual_qa_enabled
+            || backend
+                .preference(AUTOMATIC_UPDATE_CHECKS_KEY)
+                .ok()
+                .flatten()
+                .as_deref()
+                != Some("false");
+        let recovery_error = (!visual_qa_enabled)
+            .then(updater::take_recovery_error)
+            .flatten();
         let worker_preferences = if visual_qa_enabled {
             WorkerAuditPreferences::default()
         } else {
@@ -1133,6 +1147,11 @@ impl CedarApp {
             sidebar_collapsed,
             dark,
             reduced_motion,
+            automatic_update_checks,
+            update_status: recovery_error
+                .clone()
+                .map(UpdateStatus::Error)
+                .unwrap_or_default(),
             workspace_state_fingerprint,
             workspace_save_generation: 0,
             window_save_generation: 0,
@@ -1152,6 +1171,13 @@ impl CedarApp {
             app.apply_visual_qa(config, window, cx);
         } else {
             app.load_initial(cx);
+            if app.automatic_update_checks
+                && recovery_error.is_none()
+                && !cfg!(debug_assertions)
+                && updater::supported()
+            {
+                app.check_for_updates(cx);
+            }
         }
         app
     }
@@ -1535,6 +1561,138 @@ impl CedarApp {
             }
         }
         cx.notify();
+    }
+
+    fn toggle_automatic_update_checks(
+        &mut self,
+        _: &gpui::ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.automatic_update_checks = !self.automatic_update_checks;
+        match self.backend.set_preference(
+            AUTOMATIC_UPDATE_CHECKS_KEY,
+            if self.automatic_update_checks {
+                "true"
+            } else {
+                "false"
+            },
+        ) {
+            Ok(()) => self.show_notice(
+                if self.automatic_update_checks {
+                    "Automatic update checks enabled"
+                } else {
+                    "Automatic update checks disabled"
+                },
+                false,
+                window,
+                cx,
+            ),
+            Err(error) => {
+                self.error = Some(UiError::new(
+                    "Update preference was not saved",
+                    error.to_string(),
+                ));
+                self.show_notice(
+                    "Update preference changed for this session only",
+                    true,
+                    window,
+                    cx,
+                );
+            }
+        }
+        if self.automatic_update_checks && matches!(self.update_status, UpdateStatus::Idle) {
+            self.check_for_updates(cx);
+        }
+        cx.notify();
+    }
+
+    fn check_for_updates(&mut self, cx: &mut Context<Self>) {
+        if matches!(
+            self.update_status,
+            UpdateStatus::Checking | UpdateStatus::Downloading(_) | UpdateStatus::Installing
+        ) {
+            return;
+        }
+        self.update_status = UpdateStatus::Checking;
+        cx.notify();
+        let task = self.runtime.spawn(updater::check_for_update());
+        cx.spawn(async move |this, cx| {
+            let result = task
+                .await
+                .map_err(|error| error.to_string())
+                .and_then(|value| value.map_err(|error| error.to_string()));
+            if let Some(this) = this.upgrade() {
+                let _ = this.update(cx, |this, cx| {
+                    this.update_status = match result {
+                        Ok(Some(update)) => UpdateStatus::Available(update),
+                        Ok(None) => UpdateStatus::UpToDate,
+                        Err(error) => UpdateStatus::Error(error),
+                    };
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn check_for_updates_click(
+        &mut self,
+        _: &gpui::ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.check_for_updates(cx);
+    }
+
+    fn download_update_click(
+        &mut self,
+        _: &gpui::ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let UpdateStatus::Available(update) = self.update_status.clone() else {
+            return;
+        };
+        self.update_status = UpdateStatus::Downloading(update.clone());
+        cx.notify();
+        let task = self.runtime.spawn(updater::download_update(update));
+        cx.spawn(async move |this, cx| {
+            let result = task
+                .await
+                .map_err(|error| error.to_string())
+                .and_then(|value| value.map_err(|error| error.to_string()));
+            if let Some(this) = this.upgrade() {
+                let _ = this.update(cx, |this, cx| {
+                    this.update_status = match result {
+                        Ok(download) => UpdateStatus::Ready(download),
+                        Err(error) => UpdateStatus::Error(error),
+                    };
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn install_update_click(
+        &mut self,
+        _: &gpui::ClickEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let UpdateStatus::Ready(download) = self.update_status.clone() else {
+            return;
+        };
+        self.update_status = UpdateStatus::Installing;
+        cx.notify();
+        match updater::stage_install(&download) {
+            Ok(()) => cx.quit(),
+            Err(error) => {
+                self.update_status = UpdateStatus::Error(error.to_string());
+                cx.notify();
+            }
+        }
     }
 
     fn set_range(&mut self, range: &'static str, cx: &mut Context<Self>) {
@@ -2726,17 +2884,54 @@ impl CedarApp {
             .into_any_element()
     }
 
-    fn render_titlebar(&self) -> TitleBar {
+    fn render_titlebar(&self, window: &Window) -> AnyElement {
         let palette = self.palette();
-        TitleBar::new()
-            .bg(palette.sidebar)
+        if cfg!(target_os = "macos") {
+            return TitleBar::new()
+                .bg(palette.sidebar)
+                .border_color(palette.border)
+                .child(
+                    div()
+                        .h_full()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(cedar_mark(20., palette, self.dark))
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .child("Cedar"),
+                        ),
+                )
+                .into_any_element();
+        }
+
+        let maximized = window.is_maximized();
+        div()
+            .id("cedar-title-bar")
+            .h(px(34.))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_between()
+            .border_b_1()
             .border_color(palette.border)
+            .bg(palette.sidebar)
             .child(
                 div()
                     .h_full()
+                    .flex_grow()
                     .flex()
                     .items_center()
                     .gap_2()
+                    .pl_3()
+                    .window_control_area(WindowControlArea::Drag)
+                    .on_mouse_down(gpui::MouseButton::Left, |event, window, _| {
+                        if event.click_count > 1 {
+                            window.zoom_window();
+                        }
+                    })
                     .child(cedar_mark(20., palette, self.dark))
                     .child(
                         div()
@@ -2745,6 +2940,60 @@ impl CedarApp {
                             .child("Cedar"),
                     ),
             )
+            .child(
+                div()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .child(
+                        Button::new("window-minimize")
+                            .ghost()
+                            .compact()
+                            .icon(IconName::WindowMinimize)
+                            .tooltip("Minimize")
+                            .w(px(40.))
+                            .h_full()
+                            .rounded_none()
+                            .on_click(|_, window, cx| {
+                                cx.stop_propagation();
+                                window.minimize_window();
+                            }),
+                    )
+                    .child(
+                        Button::new("window-maximize")
+                            .ghost()
+                            .compact()
+                            .icon(if maximized {
+                                IconName::WindowRestore
+                            } else {
+                                IconName::WindowMaximize
+                            })
+                            .tooltip(if maximized { "Restore" } else { "Maximize" })
+                            .w(px(40.))
+                            .h_full()
+                            .rounded_none()
+                            .on_click(|_, window, cx| {
+                                cx.stop_propagation();
+                                window.zoom_window();
+                            }),
+                    )
+                    .child(
+                        Button::new("window-close")
+                            .ghost()
+                            .compact()
+                            .icon(IconName::WindowClose)
+                            .tooltip("Close")
+                            .w(px(40.))
+                            .h_full()
+                            .rounded_none()
+                            .hover(move |style| style.bg(palette.bad).text_color(color(0xffffff)))
+                            .on_click(|_, window, cx| {
+                                cx.stop_propagation();
+                                window.remove_window();
+                            }),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn render_collapsed_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -5173,6 +5422,107 @@ impl CedarApp {
             .and_then(|connection| connection.account.as_ref())
             .map(|account| account.name.clone())
             .unwrap_or_else(|| "No account connected".into());
+        let (update_icon, update_detail, update_action) = match &self.update_status {
+            UpdateStatus::Idle => (
+                IconName::Redo2,
+                "Ready to check GitHub Releases".to_string(),
+                Button::new("settings-check-update")
+                    .ghost()
+                    .icon(IconName::Redo2)
+                    .label("Check now")
+                    .tooltip("Check GitHub Releases for a newer Cedar version")
+                    .on_click(cx.listener(Self::check_for_updates_click))
+                    .into_any_element(),
+            ),
+            UpdateStatus::Checking => (
+                IconName::LoaderCircle,
+                "Checking GitHub Releases…".to_string(),
+                Button::new("settings-checking-update")
+                    .ghost()
+                    .label("Checking")
+                    .loading(!self.reduced_motion)
+                    .disabled(true)
+                    .into_any_element(),
+            ),
+            UpdateStatus::UpToDate => (
+                IconName::CircleCheck,
+                format!("Cedar {} is up to date", env!("CARGO_PKG_VERSION")),
+                Button::new("settings-recheck-update")
+                    .ghost()
+                    .icon(IconName::Redo2)
+                    .label("Check again")
+                    .on_click(cx.listener(Self::check_for_updates_click))
+                    .into_any_element(),
+            ),
+            UpdateStatus::Available(update) => {
+                let published = update
+                    .published_at
+                    .as_deref()
+                    .map(|date| format!(" · {}", date.split('T').next().unwrap_or(date)))
+                    .unwrap_or_default();
+                let notes = update
+                    .notes
+                    .lines()
+                    .find(|line| !line.trim().is_empty())
+                    .map(|line| format!(" · {}", line.trim()))
+                    .unwrap_or_default();
+                (
+                    IconName::ArrowDown,
+                    format!("Cedar {} is available{published}{notes}", update.version),
+                    Button::new("settings-download-update")
+                        .primary()
+                        .icon(IconName::ArrowDown)
+                        .label("Download")
+                        .tooltip(format!("Download and verify {}", update.asset_name))
+                        .on_click(cx.listener(Self::download_update_click))
+                        .into_any_element(),
+                )
+            }
+            UpdateStatus::Downloading(update) => (
+                IconName::LoaderCircle,
+                format!("Downloading and verifying Cedar {}…", update.version),
+                Button::new("settings-downloading-update")
+                    .ghost()
+                    .label("Downloading")
+                    .loading(!self.reduced_motion)
+                    .disabled(true)
+                    .into_any_element(),
+            ),
+            UpdateStatus::Ready(download) => (
+                IconName::CircleCheck,
+                format!(
+                    "Cedar {} is ready · {}",
+                    download.info.version, download.verification
+                ),
+                Button::new("settings-install-update")
+                    .primary()
+                    .icon(IconName::Redo2)
+                    .label("Restart to update")
+                    .tooltip("Restart Cedar and install the verified update")
+                    .on_click(cx.listener(Self::install_update_click))
+                    .into_any_element(),
+            ),
+            UpdateStatus::Installing => (
+                IconName::LoaderCircle,
+                "Preparing the verified update and restarting…".to_string(),
+                Button::new("settings-installing-update")
+                    .ghost()
+                    .label("Restarting")
+                    .loading(!self.reduced_motion)
+                    .disabled(true)
+                    .into_any_element(),
+            ),
+            UpdateStatus::Error(error) => (
+                IconName::TriangleAlert,
+                error.clone(),
+                Button::new("settings-retry-update")
+                    .ghost()
+                    .icon(IconName::Redo2)
+                    .label("Retry")
+                    .on_click(cx.listener(Self::check_for_updates_click))
+                    .into_any_element(),
+            ),
+        };
 
         div()
             .grid()
@@ -5321,6 +5671,42 @@ impl CedarApp {
                             ("Snapshots", "Local SQLite".into()),
                             ("Version", env!("CARGO_PKG_VERSION").into()),
                         ],
+                        palette,
+                    ))
+                    .child(settings_preference_row(
+                        update_icon,
+                        "Software update",
+                        &update_detail,
+                        update_action,
+                        palette,
+                    ))
+                    .child(settings_preference_row(
+                        if self.automatic_update_checks {
+                            IconName::CircleCheck
+                        } else {
+                            IconName::CircleX
+                        },
+                        "Automatic checks",
+                        if self.automatic_update_checks {
+                            "Check for a new release when Cedar starts"
+                        } else {
+                            "Only check when requested"
+                        },
+                        Button::new("settings-automatic-updates")
+                            .ghost()
+                            .icon(if self.automatic_update_checks {
+                                IconName::CircleCheck
+                            } else {
+                                IconName::CircleX
+                            })
+                            .label(if self.automatic_update_checks {
+                                "Enabled"
+                            } else {
+                                "Disabled"
+                            })
+                            .tooltip("Toggle automatic update checks")
+                            .on_click(cx.listener(Self::toggle_automatic_update_checks))
+                            .into_any_element(),
                         palette,
                     )),
             )
@@ -6955,7 +7341,7 @@ impl Render for CedarApp {
             .on_action(cx.listener(Self::inspector_back))
             .on_action(cx.listener(Self::inspector_forward))
             .on_key_down(cx.listener(Self::investigation_key_down))
-            .child(self.render_titlebar())
+            .child(self.render_titlebar(window))
             .child(body)
     }
 }

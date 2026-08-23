@@ -49,6 +49,10 @@ jobs:
         shell: pwsh
         run: ./scripts/smoke-windows.ps1 -Path target/release/cedar.exe
 
+      - name: Custom window controls smoke
+        shell: pwsh
+        run: ./scripts/smoke-window-controls.ps1 -Path target/release/cedar.exe
+
   macos:
     name: macOS compile and test
     runs-on: macos-latest
