@@ -1,0 +1,395 @@
+{
+  "generatedAt": "2026-08-23T13:36:40Z",
+  "range": "24h",
+  "live": true,
+  "cached": false,
+  "expiresAt": "2026-08-23T13:41:40Z",
+  "account": {
+    "id": "account-cedar-qa",
+    "name": "Artor Studio"
+  },
+  "inventory": {
+    "workers": 3,
+    "pages": 1,
+    "d1": 2,
+    "r2": 2,
+    "kv": 1,
+    "zones": 2
+  },
+  "metrics": {
+    "workerRequests": 847320,
+    "workerErrors": 342,
+    "workerCpuTimeMs": 18422.6,
+    "d1Queries": 128430,
+    "d1LatencyP90Ms": 18.4,
+    "d1RowsRead": 924800,
+    "d1RowsWritten": 24160,
+    "d1StorageBytes": 314572800,
+    "r2Operations": 48210,
+    "r2StorageBytes": 12884901888,
+    "r2ClassAOperations": 8410,
+    "r2ClassBOperations": 39800,
+    "kvOperations": 96240,
+    "kvStorageBytes": 67108864,
+    "kvReadOperations": 84120,
+    "kvWriteOperations": 10840,
+    "kvDeleteOperations": 320,
+    "kvListOperations": 960,
+    "costUsd": 5.27,
+    "costCurrency": "USD",
+    "costSource": "Workers Paid projection",
+    "costBaseUsd": 5.0,
+    "costOverageUsd": 0.27,
+    "zoneRequests": 1943820,
+    "zoneSecurityEvents": 1284,
+    "zoneCacheHitRatio": 0.824,
+    "auditEvents": 38,
+    "auditFailures": 2,
+    "logpushJobs": 3,
+    "logpushEnabledJobs": 2,
+    "workerLogEvents": 9240,
+    "workerTraceEvents": 1840,
+    "workerObservabilityFields": 14,
+    "workerObservabilityDestinations": 2,
+    "collectorApiCalls": 42,
+    "collectorApiErrors": 1,
+    "collectorApiP95Ms": 284.7
+  },
+  "resources": [
+    {
+      "id": "artor-api",
+      "name": "artor-api",
+      "kind": "worker",
+      "status": "warning",
+      "primaryMetric": "634k requests",
+      "secondaryMetric": "342 errors · 24h",
+      "updatedAt": "2026-08-23T13:36:31Z",
+      "bindings": [
+        {
+          "name": "APP_DB",
+          "bindingType": "d1",
+          "resourceKind": "d1",
+          "resourceId": "artor-production",
+          "resourceName": "artor-production"
+        },
+        {
+          "name": "ASSETS",
+          "bindingType": "r2",
+          "resourceKind": "r2",
+          "resourceId": "artor-assets",
+          "resourceName": "artor-assets"
+        }
+      ],
+      "observability": {
+        "enabled": true,
+        "logsEnabled": true,
+        "tracesEnabled": true,
+        "invocationLogs": true,
+        "headSamplingRate": 1.0,
+        "logpush": true,
+        "destinations": ["cedar-logpush", "workers-traces"]
+      }
+    },
+    {
+      "id": "artor-job-processor",
+      "name": "artor-job-processor",
+      "kind": "worker",
+      "status": "healthy",
+      "primaryMetric": "181k requests",
+      "secondaryMetric": "0 errors · 24h",
+      "updatedAt": "2026-08-23T13:36:29Z",
+      "bindings": [
+        {
+          "name": "JOBS",
+          "bindingType": "kv_namespace",
+          "resourceKind": "kv",
+          "resourceId": "artor-jobs",
+          "resourceName": "artor-jobs"
+        }
+      ],
+      "observability": {
+        "enabled": true,
+        "logsEnabled": true,
+        "tracesEnabled": true,
+        "invocationLogs": true,
+        "headSamplingRate": 0.2,
+        "logpush": true,
+        "destinations": ["cedar-logpush"]
+      }
+    },
+    {
+      "id": "artor-r2-proxy",
+      "name": "artor-r2-proxy",
+      "kind": "worker",
+      "status": "quiet",
+      "primaryMetric": "31.9k requests",
+      "secondaryMetric": "No durable telemetry",
+      "updatedAt": "2026-08-23T13:35:58Z",
+      "bindings": [
+        {
+          "name": "MEDIA",
+          "bindingType": "r2",
+          "resourceKind": "r2",
+          "resourceId": "artor-media",
+          "resourceName": "artor-media"
+        }
+      ],
+      "observability": {
+        "enabled": false,
+        "logsEnabled": false,
+        "tracesEnabled": false,
+        "invocationLogs": false,
+        "headSamplingRate": 0.0,
+        "logpush": false,
+        "destinations": []
+      }
+    },
+    {
+      "id": "artor-production",
+      "name": "artor-production",
+      "kind": "d1",
+      "status": "healthy",
+      "primaryMetric": "128k queries",
+      "secondaryMetric": "18.4 ms p90 · 300 MB",
+      "updatedAt": "2026-08-23T13:36:22Z",
+      "bindings": [],
+      "observability": null
+    },
+    {
+      "id": "artor-analytics",
+      "name": "artor-analytics",
+      "kind": "d1",
+      "status": "healthy",
+      "primaryMetric": "24.1k queries",
+      "secondaryMetric": "11.2 ms p90 · 84 MB",
+      "updatedAt": "2026-08-23T13:36:20Z",
+      "bindings": [],
+      "observability": null
+    },
+    {
+      "id": "artor-assets",
+      "name": "artor-assets",
+      "kind": "r2",
+      "status": "healthy",
+      "primaryMetric": "8.4 GB",
+      "secondaryMetric": "31.8k operations",
+      "updatedAt": "2026-08-23T13:36:17Z",
+      "bindings": [],
+      "observability": null
+    },
+    {
+      "id": "artor-media",
+      "name": "artor-media",
+      "kind": "r2",
+      "status": "healthy",
+      "primaryMetric": "3.6 GB",
+      "secondaryMetric": "16.4k operations",
+      "updatedAt": "2026-08-23T13:36:14Z",
+      "bindings": [],
+      "observability": null
+    },
+    {
+      "id": "artor-jobs",
+      "name": "artor-jobs",
+      "kind": "kv",
+      "status": "healthy",
+      "primaryMetric": "96.2k operations",
+      "secondaryMetric": "64 MB stored",
+      "updatedAt": "2026-08-23T13:36:11Z",
+      "bindings": [],
+      "observability": null
+    },
+    {
+      "id": "artor-dashboard",
+      "name": "artor-dashboard",
+      "kind": "pages",
+      "status": "healthy",
+      "primaryMetric": "Production ready",
+      "secondaryMetric": "main · 3 domains",
+      "updatedAt": "2026-08-23T13:35:44Z",
+      "bindings": [],
+      "observability": null
+    },
+    {
+      "id": "artor-studio-com",
+      "name": "artor.studio",
+      "kind": "zone",
+      "status": "healthy",
+      "primaryMetric": "1.6M requests",
+      "secondaryMetric": "84.2% cache hit",
+      "updatedAt": "2026-08-23T13:35:40Z",
+      "bindings": [],
+      "observability": null
+    }
+  ],
+  "usagePanels": [
+    {
+      "id": "workers",
+      "title": "Workers",
+      "value": "847k",
+      "detail": "342 errors",
+      "tone": "warn",
+      "points": [48, 52, 49, 61, 68, 66, 73, 79, 76, 84, 91, 88]
+    },
+    {
+      "id": "d1",
+      "title": "D1",
+      "value": "128k",
+      "detail": "18.4 ms p90",
+      "tone": "neutral",
+      "points": [21, 24, 22, 29, 31, 34, 33, 38, 42, 44, 48, 51]
+    },
+    {
+      "id": "r2",
+      "title": "R2",
+      "value": "12.0 GB",
+      "detail": "48.2k operations",
+      "tone": "neutral",
+      "points": [14, 16, 17, 21, 19, 24, 26, 29, 31, 35, 34, 38]
+    },
+    {
+      "id": "kv",
+      "title": "KV",
+      "value": "96.2k",
+      "detail": "64 MB stored",
+      "tone": "neutral",
+      "points": [18, 17, 22, 25, 24, 28, 32, 31, 36, 39, 41, 44]
+    },
+    {
+      "id": "observability",
+      "title": "Observability",
+      "value": "11.1k",
+      "detail": "38 audit events / 2 Logpush jobs",
+      "tone": "warn",
+      "points": []
+    }
+  ],
+  "health": [
+    {
+      "id": "inventory",
+      "service": "Inventory",
+      "status": "ok",
+      "label": "Fresh",
+      "detail": "Resource inventory collectors returned data."
+    },
+    {
+      "id": "graphql",
+      "service": "GraphQL metrics",
+      "status": "ok",
+      "label": "Fresh",
+      "detail": "Account and product analytics collectors completed."
+    },
+    {
+      "id": "observability",
+      "service": "Observability",
+      "status": "warn",
+      "label": "Partial",
+      "detail": "One Worker has no durable logs or traces."
+    },
+    {
+      "id": "collector",
+      "service": "Collector API",
+      "status": "warn",
+      "label": "See issues",
+      "detail": "One collector issue was recorded during this sync."
+    }
+  ],
+  "issues": [
+    "Worker artor-api returned 342 execution errors in the selected range.",
+    "Worker artor-r2-proxy has no durable incident logs or traces.",
+    "Optional Workers Observability write-gated destination check was unavailable."
+  ],
+  "zones": {
+    "zones": 2,
+    "activeZones": 2,
+    "requests": 1943820,
+    "securityEvents": 1284,
+    "cacheHitRatio": 0.824,
+    "topHosts": [
+      { "host": "artor.studio", "requests": 1624180 },
+      { "host": "api.artor.studio", "requests": 319640 }
+    ]
+  },
+  "audit": {
+    "events": 38,
+    "failures": 2,
+    "apiEvents": 24,
+    "dashboardEvents": 14,
+    "recent": [
+      {
+        "action": "workers_script.update",
+        "actor": "omer@artor.studio",
+        "interface": "api",
+        "method": "PUT",
+        "result": "success",
+        "timestamp": "2026-08-23T12:58:02Z",
+        "resource": "artor-api"
+      }
+    ]
+  },
+  "logpush": {
+    "jobs": 3,
+    "enabledJobs": 2,
+    "workersTraceJobs": 1,
+    "auditJobs": 1,
+    "disabledJobs": 1,
+    "recent": [
+      {
+        "id": "job-workers",
+        "name": "cedar-workers",
+        "dataset": "workers_trace_events",
+        "enabled": true,
+        "destination": "r2://cedar-logs/workers/{DATE}",
+        "kind": "r2"
+      }
+    ]
+  },
+  "observability": {
+    "logEvents": 9240,
+    "errorEvents": 342,
+    "traces": 1840,
+    "fields": 14,
+    "destinations": 2,
+    "configuredWorkers": 2,
+    "fullSampleWorkers": 1,
+    "liveTailAvailable": true,
+    "recentEvents": [
+      {
+        "service": "artor-api",
+        "message": "Upstream request returned 502",
+        "timestamp": "2026-08-23T13:35:58Z",
+        "level": "error"
+      }
+    ],
+    "gaps": ["artor-r2-proxy has no durable logs or traces"]
+  },
+  "collector": {
+    "apiCalls": 42,
+    "apiErrors": 1,
+    "apiDurationP95Ms": 284.7,
+    "rateLimitRemaining": "1187",
+    "lastRayId": "8c9f4e6a2a5c113b-TLV",
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/accounts/account-cedar-qa/workers/scripts",
+        "status": 200,
+        "durationMs": 118.4,
+        "ok": true,
+        "optional": false,
+        "rayId": "8c9f4e6a2a5c113b-TLV",
+        "error": null
+      },
+      {
+        "method": "POST",
+        "path": "/graphql",
+        "status": 403,
+        "durationMs": 284.7,
+        "ok": false,
+        "optional": false,
+        "rayId": "8c9f4e6a2a5c113b-TLV",
+        "error": "Scoped analytics dataset unavailable"
+      }
+    ]
+  }
+}

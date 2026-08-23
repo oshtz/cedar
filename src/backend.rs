@@ -1,15 +1,14 @@
 use chrono::{DateTime, Duration, Utc};
-use reqwest::{header::HeaderMap, Client};
-use rusqlite::{params, Connection};
+use reqwest::{Client, header::HeaderMap};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
-use tauri::{Manager, State};
 
 const CF_API_BASE: &str = "https://api.cloudflare.com/client/v4";
 const KEYRING_SERVICE: &str = "cedar";
@@ -18,10 +17,10 @@ const CF_REST_PAGE_SIZE: usize = 100;
 const CF_REST_MAX_PAGES: usize = 100;
 const ZONE_GRAPHQL_BATCH_SIZE: usize = 10;
 
-type AppResult<T> = Result<T, AppError>;
+pub(crate) type AppResult<T> = Result<T, AppError>;
 
 #[derive(Debug)]
-enum AppError {
+pub(crate) enum AppError {
     Message(String),
     Http(reqwest::Error),
     Database(rusqlite::Error),
@@ -84,190 +83,190 @@ impl Serialize for AppError {
     }
 }
 
-struct AppStateInner {
+pub(crate) struct Backend {
     db: Mutex<Connection>,
     client: Client,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Account {
-    id: String,
-    name: String,
+pub(crate) struct Account {
+    pub(crate) id: String,
+    pub(crate) name: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ConnectionState {
-    configured: bool,
-    account: Option<Account>,
-    token_present: bool,
-    storage: &'static str,
+pub(crate) struct ConnectionState {
+    pub(crate) configured: bool,
+    pub(crate) account: Option<Account>,
+    pub(crate) token_present: bool,
+    pub(crate) storage: &'static str,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct InventorySummary {
-    workers: usize,
-    pages: usize,
-    d1: usize,
-    r2: usize,
-    kv: usize,
-    zones: usize,
+pub(crate) struct InventorySummary {
+    pub(crate) workers: usize,
+    pub(crate) pages: usize,
+    pub(crate) d1: usize,
+    pub(crate) r2: usize,
+    pub(crate) kv: usize,
+    pub(crate) zones: usize,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct MetricSummary {
-    worker_requests: u64,
-    worker_errors: u64,
-    worker_cpu_time_ms: Option<f64>,
-    d1_queries: u64,
-    d1_latency_p90_ms: Option<f64>,
-    d1_rows_read: u64,
-    d1_rows_written: u64,
-    d1_storage_bytes: u64,
-    r2_operations: u64,
-    r2_storage_bytes: u64,
-    r2_class_a_operations: u64,
-    r2_class_b_operations: u64,
-    kv_operations: u64,
-    kv_storage_bytes: u64,
-    kv_read_operations: u64,
-    kv_write_operations: u64,
-    kv_delete_operations: u64,
-    kv_list_operations: u64,
-    cost_usd: Option<f64>,
-    cost_currency: Option<String>,
-    cost_source: Option<String>,
-    cost_base_usd: Option<f64>,
-    cost_overage_usd: Option<f64>,
-    billing_rows: Option<usize>,
-    zone_requests: u64,
-    zone_security_events: u64,
-    zone_cache_hit_ratio: Option<f64>,
-    audit_events: u64,
-    audit_failures: u64,
-    logpush_jobs: u64,
-    logpush_enabled_jobs: u64,
-    worker_log_events: u64,
-    worker_trace_events: u64,
-    worker_observability_fields: u64,
-    worker_observability_destinations: u64,
-    collector_api_calls: u64,
-    collector_api_errors: u64,
-    collector_api_p95_ms: Option<f64>,
+pub(crate) struct MetricSummary {
+    pub(crate) worker_requests: u64,
+    pub(crate) worker_errors: u64,
+    pub(crate) worker_cpu_time_ms: Option<f64>,
+    pub(crate) d1_queries: u64,
+    pub(crate) d1_latency_p90_ms: Option<f64>,
+    pub(crate) d1_rows_read: u64,
+    pub(crate) d1_rows_written: u64,
+    pub(crate) d1_storage_bytes: u64,
+    pub(crate) r2_operations: u64,
+    pub(crate) r2_storage_bytes: u64,
+    pub(crate) r2_class_a_operations: u64,
+    pub(crate) r2_class_b_operations: u64,
+    pub(crate) kv_operations: u64,
+    pub(crate) kv_storage_bytes: u64,
+    pub(crate) kv_read_operations: u64,
+    pub(crate) kv_write_operations: u64,
+    pub(crate) kv_delete_operations: u64,
+    pub(crate) kv_list_operations: u64,
+    pub(crate) cost_usd: Option<f64>,
+    pub(crate) cost_currency: Option<String>,
+    pub(crate) cost_source: Option<String>,
+    pub(crate) cost_base_usd: Option<f64>,
+    pub(crate) cost_overage_usd: Option<f64>,
+    pub(crate) billing_rows: Option<usize>,
+    pub(crate) zone_requests: u64,
+    pub(crate) zone_security_events: u64,
+    pub(crate) zone_cache_hit_ratio: Option<f64>,
+    pub(crate) audit_events: u64,
+    pub(crate) audit_failures: u64,
+    pub(crate) logpush_jobs: u64,
+    pub(crate) logpush_enabled_jobs: u64,
+    pub(crate) worker_log_events: u64,
+    pub(crate) worker_trace_events: u64,
+    pub(crate) worker_observability_fields: u64,
+    pub(crate) worker_observability_destinations: u64,
+    pub(crate) collector_api_calls: u64,
+    pub(crate) collector_api_errors: u64,
+    pub(crate) collector_api_p95_ms: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct ZoneSummary {
-    zones: usize,
-    active_zones: usize,
-    requests: u64,
-    security_events: u64,
-    cache_hit_ratio: Option<f64>,
-    top_hosts: Vec<ZoneHostMetric>,
+pub(crate) struct ZoneSummary {
+    pub(crate) zones: usize,
+    pub(crate) active_zones: usize,
+    pub(crate) requests: u64,
+    pub(crate) security_events: u64,
+    pub(crate) cache_hit_ratio: Option<f64>,
+    pub(crate) top_hosts: Vec<ZoneHostMetric>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct ZoneHostMetric {
-    host: String,
-    requests: u64,
+pub(crate) struct ZoneHostMetric {
+    pub(crate) host: String,
+    pub(crate) requests: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct AuditSummary {
-    events: usize,
-    failures: usize,
-    api_events: usize,
-    dashboard_events: usize,
-    recent: Vec<AuditEvent>,
+pub(crate) struct AuditSummary {
+    pub(crate) events: usize,
+    pub(crate) failures: usize,
+    pub(crate) api_events: usize,
+    pub(crate) dashboard_events: usize,
+    pub(crate) recent: Vec<AuditEvent>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct AuditEvent {
-    action: String,
-    actor: String,
-    interface: String,
-    method: String,
-    result: String,
-    timestamp: Option<String>,
-    resource: Option<String>,
+pub(crate) struct AuditEvent {
+    pub(crate) action: String,
+    pub(crate) actor: String,
+    pub(crate) interface: String,
+    pub(crate) method: String,
+    pub(crate) result: String,
+    pub(crate) timestamp: Option<String>,
+    pub(crate) resource: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct LogpushSummary {
-    jobs: usize,
-    enabled_jobs: usize,
-    workers_trace_jobs: usize,
-    audit_jobs: usize,
-    disabled_jobs: usize,
-    recent: Vec<LogpushJob>,
+pub(crate) struct LogpushSummary {
+    pub(crate) jobs: usize,
+    pub(crate) enabled_jobs: usize,
+    pub(crate) workers_trace_jobs: usize,
+    pub(crate) audit_jobs: usize,
+    pub(crate) disabled_jobs: usize,
+    pub(crate) recent: Vec<LogpushJob>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct LogpushJob {
-    id: String,
-    name: String,
-    dataset: String,
-    enabled: bool,
-    destination: String,
-    kind: Option<String>,
+pub(crate) struct LogpushJob {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) dataset: String,
+    pub(crate) enabled: bool,
+    pub(crate) destination: String,
+    pub(crate) kind: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct WorkerObservabilitySummary {
-    log_events: u64,
-    error_events: u64,
-    traces: u64,
-    fields: usize,
-    destinations: usize,
-    configured_workers: usize,
-    full_sample_workers: usize,
-    live_tail_available: bool,
-    recent_events: Vec<WorkerTelemetryEvent>,
-    gaps: Vec<String>,
+pub(crate) struct WorkerObservabilitySummary {
+    pub(crate) log_events: u64,
+    pub(crate) error_events: u64,
+    pub(crate) traces: u64,
+    pub(crate) fields: usize,
+    pub(crate) destinations: usize,
+    pub(crate) configured_workers: usize,
+    pub(crate) full_sample_workers: usize,
+    pub(crate) live_tail_available: bool,
+    pub(crate) recent_events: Vec<WorkerTelemetryEvent>,
+    pub(crate) gaps: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct WorkerTelemetryEvent {
-    service: String,
-    message: String,
-    timestamp: Option<String>,
-    level: Option<String>,
+pub(crate) struct WorkerTelemetryEvent {
+    pub(crate) service: String,
+    pub(crate) message: String,
+    pub(crate) timestamp: Option<String>,
+    pub(crate) level: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct CollectorTelemetry {
-    api_calls: u64,
-    api_errors: u64,
-    api_duration_p95_ms: Option<f64>,
-    rate_limit_remaining: Option<String>,
-    last_ray_id: Option<String>,
-    endpoints: Vec<CollectorEndpoint>,
+pub(crate) struct CollectorTelemetry {
+    pub(crate) api_calls: u64,
+    pub(crate) api_errors: u64,
+    pub(crate) api_duration_p95_ms: Option<f64>,
+    pub(crate) rate_limit_remaining: Option<String>,
+    pub(crate) last_ray_id: Option<String>,
+    pub(crate) endpoints: Vec<CollectorEndpoint>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct CollectorEndpoint {
-    method: String,
-    path: String,
-    status: Option<u16>,
-    duration_ms: f64,
-    ok: bool,
+pub(crate) struct CollectorEndpoint {
+    pub(crate) method: String,
+    pub(crate) path: String,
+    pub(crate) status: Option<u16>,
+    pub(crate) duration_ms: f64,
+    pub(crate) ok: bool,
     #[serde(default)]
-    optional: bool,
-    ray_id: Option<String>,
-    error: Option<String>,
+    pub(crate) optional: bool,
+    pub(crate) ray_id: Option<String>,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Default)]
@@ -278,6 +277,7 @@ struct CollectorTelemetryBuilder {
 }
 
 impl CollectorTelemetryBuilder {
+    #[allow(clippy::too_many_arguments)]
     fn record(
         &mut self,
         method: &str,
@@ -366,26 +366,26 @@ fn is_optional_collector_endpoint(path: &str, status: Option<u16>, error: Option
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ResourceRow {
-    id: String,
-    name: String,
-    kind: String,
-    status: String,
-    primary_metric: String,
-    secondary_metric: String,
-    updated_at: Option<String>,
-    bindings: Option<Vec<ResourceBinding>>,
-    observability: Option<ResourceObservability>,
+pub(crate) struct ResourceRow {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    pub(crate) status: String,
+    pub(crate) primary_metric: String,
+    pub(crate) secondary_metric: String,
+    pub(crate) updated_at: Option<String>,
+    pub(crate) bindings: Option<Vec<ResourceBinding>>,
+    pub(crate) observability: Option<ResourceObservability>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ResourceBinding {
-    name: String,
-    binding_type: Option<String>,
-    resource_kind: Option<String>,
-    resource_id: Option<String>,
-    resource_name: Option<String>,
+pub(crate) struct ResourceBinding {
+    pub(crate) name: String,
+    pub(crate) binding_type: Option<String>,
+    pub(crate) resource_kind: Option<String>,
+    pub(crate) resource_id: Option<String>,
+    pub(crate) resource_name: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for ResourceBinding {
@@ -431,72 +431,72 @@ impl<'de> Deserialize<'de> for ResourceBinding {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct ResourceObservability {
-    enabled: Option<bool>,
-    logs_enabled: Option<bool>,
-    traces_enabled: Option<bool>,
-    invocation_logs: Option<bool>,
-    head_sampling_rate: Option<f64>,
-    logpush: Option<bool>,
-    destinations: Vec<String>,
+pub(crate) struct ResourceObservability {
+    pub(crate) enabled: Option<bool>,
+    pub(crate) logs_enabled: Option<bool>,
+    pub(crate) traces_enabled: Option<bool>,
+    pub(crate) invocation_logs: Option<bool>,
+    pub(crate) head_sampling_rate: Option<f64>,
+    pub(crate) logpush: Option<bool>,
+    pub(crate) destinations: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct UsagePanel {
-    id: String,
-    title: String,
-    value: String,
-    detail: String,
-    tone: String,
-    points: Vec<u32>,
+pub(crate) struct UsagePanel {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) value: String,
+    pub(crate) detail: String,
+    pub(crate) tone: String,
+    pub(crate) points: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ServiceHealth {
-    id: String,
-    service: String,
-    status: String,
-    label: String,
-    detail: String,
+pub(crate) struct ServiceHealth {
+    pub(crate) id: String,
+    pub(crate) service: String,
+    pub(crate) status: String,
+    pub(crate) label: String,
+    pub(crate) detail: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DashboardSnapshot {
-    generated_at: String,
-    range: String,
-    live: bool,
+pub(crate) struct DashboardSnapshot {
+    pub(crate) generated_at: String,
+    pub(crate) range: String,
+    pub(crate) live: bool,
     #[serde(default)]
-    cached: bool,
+    pub(crate) cached: bool,
     #[serde(default)]
-    expires_at: Option<String>,
-    account: Option<Account>,
-    inventory: InventorySummary,
-    metrics: MetricSummary,
-    resources: Vec<ResourceRow>,
-    usage_panels: Vec<UsagePanel>,
-    health: Vec<ServiceHealth>,
-    issues: Vec<String>,
+    pub(crate) expires_at: Option<String>,
+    pub(crate) account: Option<Account>,
+    pub(crate) inventory: InventorySummary,
+    pub(crate) metrics: MetricSummary,
+    pub(crate) resources: Vec<ResourceRow>,
+    pub(crate) usage_panels: Vec<UsagePanel>,
+    pub(crate) health: Vec<ServiceHealth>,
+    pub(crate) issues: Vec<String>,
     #[serde(default)]
-    zones: ZoneSummary,
+    pub(crate) zones: ZoneSummary,
     #[serde(default)]
-    audit: AuditSummary,
+    pub(crate) audit: AuditSummary,
     #[serde(default)]
-    logpush: LogpushSummary,
+    pub(crate) logpush: LogpushSummary,
     #[serde(default)]
-    observability: WorkerObservabilitySummary,
+    pub(crate) observability: WorkerObservabilitySummary,
     #[serde(default)]
-    collector: CollectorTelemetry,
+    pub(crate) collector: CollectorTelemetry,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ConnectResult {
-    accounts: Vec<Account>,
-    connection: Option<ConnectionState>,
-    snapshot: Option<DashboardSnapshot>,
+pub(crate) struct ConnectResult {
+    pub(crate) accounts: Vec<Account>,
+    pub(crate) connection: Option<ConnectionState>,
+    pub(crate) snapshot: Option<DashboardSnapshot>,
 }
 
 #[derive(Clone, Debug)]
@@ -527,123 +527,144 @@ struct CostProjection {
     overage: f64,
 }
 
-#[tauri::command]
-async fn get_connection(state: State<'_, AppStateInner>) -> AppResult<ConnectionState> {
-    let token_present = read_token().is_ok();
-    let account = read_account(&state)?;
-
-    Ok(ConnectionState {
-        configured: token_present && account.is_some(),
-        account,
-        token_present,
-        storage: "os-keychain",
-    })
-}
-
-#[tauri::command]
-async fn discover_accounts(
-    token: String,
-    state: State<'_, AppStateInner>,
-) -> AppResult<Vec<Account>> {
-    let mut collector = CollectorTelemetryBuilder::default();
-    fetch_accounts(&state.client, &token, &mut collector).await
-}
-
-#[tauri::command]
-async fn connect_cloudflare(
-    token: String,
-    account_id: Option<String>,
-    state: State<'_, AppStateInner>,
-) -> AppResult<ConnectResult> {
-    if token.trim().is_empty() {
-        return Err(AppError::Message(
-            "Cloudflare API token is required.".into(),
-        ));
+impl Backend {
+    pub(crate) fn new() -> AppResult<Self> {
+        Ok(Self {
+            db: Mutex::new(open_database()?),
+            client: Client::builder()
+                .user_agent(concat!("cedar/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .map_err(AppError::Http)?,
+        })
     }
 
-    let mut collector = CollectorTelemetryBuilder::default();
-    let accounts = fetch_accounts(&state.client, token.trim(), &mut collector).await?;
-    if accounts.is_empty() {
-        return Err(AppError::Message(
-            "The token is valid, but no Cloudflare accounts were returned.".into(),
-        ));
+    pub(crate) fn new_visual_qa() -> AppResult<Self> {
+        let db = Connection::open_in_memory()?;
+        initialize_database(&db)?;
+        Ok(Self {
+            db: Mutex::new(db),
+            client: Client::builder()
+                .user_agent(concat!("cedar/", env!("CARGO_PKG_VERSION"), " visual-qa"))
+                .build()
+                .map_err(AppError::Http)?,
+        })
     }
 
-    let account = match account_id {
-        Some(id) if !id.is_empty() => accounts
-            .iter()
-            .find(|candidate| candidate.id == id)
-            .cloned()
-            .ok_or_else(|| {
-                AppError::Message("Selected account was not returned by Cloudflare.".into())
-            })?,
-        _ => accounts[0].clone(),
-    };
+    pub(crate) fn get_connection(&self) -> AppResult<ConnectionState> {
+        let token_present = read_token().is_ok();
+        let account = read_account(self)?;
 
-    write_token(token.trim())?;
-    write_account(&state, &account)?;
-
-    let snapshot = collect_snapshot(&state, token.trim(), &account, "24h").await?;
-
-    Ok(ConnectResult {
-        accounts,
-        connection: Some(ConnectionState {
-            configured: true,
-            account: Some(account),
-            token_present: true,
+        Ok(ConnectionState {
+            configured: token_present && account.is_some(),
+            account,
+            token_present,
             storage: "os-keychain",
-        }),
-        snapshot: Some(snapshot),
-    })
-}
+        })
+    }
 
-#[tauri::command]
-fn get_cached_snapshot(
-    range: String,
-    state: State<'_, AppStateInner>,
-) -> AppResult<Option<DashboardSnapshot>> {
-    let Some(account) = read_account(&state)? else {
-        return Ok(None);
-    };
-    let normalized_range = normalize_range(&range);
-    read_latest_snapshot(&state, &account, normalized_range)
-}
+    pub(crate) async fn discover_accounts(&self, token: &str) -> AppResult<Vec<Account>> {
+        let mut collector = CollectorTelemetryBuilder::default();
+        fetch_accounts(&self.client, token, &mut collector).await
+    }
 
-#[tauri::command]
-async fn sync_cloudflare(
-    range: String,
-    force_refresh: Option<bool>,
-    state: State<'_, AppStateInner>,
-) -> AppResult<DashboardSnapshot> {
-    let token = read_token()?;
-    let account = read_account(&state)?
-        .ok_or_else(|| AppError::Message("Connect a Cloudflare account before syncing.".into()))?;
-    sync_snapshot(
-        &state,
-        &token,
-        &account,
-        &range,
-        force_refresh.unwrap_or(false),
-    )
-    .await
-}
+    pub(crate) async fn connect_cloudflare(
+        &self,
+        token: &str,
+        account_id: Option<&str>,
+    ) -> AppResult<ConnectResult> {
+        if token.trim().is_empty() {
+            return Err(AppError::Message(
+                "Cloudflare API token is required.".into(),
+            ));
+        }
 
-#[tauri::command]
-async fn clear_connection(state: State<'_, AppStateInner>) -> AppResult<()> {
-    let _ = keyring_entry().delete_credential();
-    let db = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Message("Local database lock failed.".into()))?;
-    db.execute(
-        "DELETE FROM config WHERE key IN ('account_id', 'account_name')",
-        [],
-    )?;
-    Ok(())
+        let mut collector = CollectorTelemetryBuilder::default();
+        let accounts = fetch_accounts(&self.client, token.trim(), &mut collector).await?;
+        if accounts.is_empty() {
+            return Err(AppError::Message(
+                "The token is valid, but no Cloudflare accounts were returned.".into(),
+            ));
+        }
+
+        let account = match account_id {
+            Some(id) if !id.is_empty() => accounts
+                .iter()
+                .find(|candidate| candidate.id == id)
+                .cloned()
+                .ok_or_else(|| {
+                    AppError::Message("Selected account was not returned by Cloudflare.".into())
+                })?,
+            _ => accounts[0].clone(),
+        };
+
+        write_token(token.trim())?;
+        write_account(self, &account)?;
+
+        let snapshot = collect_snapshot(self, token.trim(), &account, "24h").await?;
+
+        Ok(ConnectResult {
+            accounts,
+            connection: Some(ConnectionState {
+                configured: true,
+                account: Some(account),
+                token_present: true,
+                storage: "os-keychain",
+            }),
+            snapshot: Some(snapshot),
+        })
+    }
+
+    pub(crate) fn get_cached_snapshot(&self, range: &str) -> AppResult<Option<DashboardSnapshot>> {
+        let Some(account) = read_account(self)? else {
+            return Ok(None);
+        };
+        read_latest_snapshot(self, &account, normalize_range(range))
+    }
+
+    pub(crate) async fn sync_cloudflare(
+        &self,
+        range: &str,
+        force_refresh: bool,
+    ) -> AppResult<DashboardSnapshot> {
+        let token = read_token()?;
+        let account = read_account(self)?.ok_or_else(|| {
+            AppError::Message("Connect a Cloudflare account before syncing.".into())
+        })?;
+        sync_snapshot(self, &token, &account, range, force_refresh).await
+    }
+
+    pub(crate) fn clear_connection(&self) -> AppResult<()> {
+        let _ = keyring_entry().delete_credential();
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| AppError::Message("Local database lock failed.".into()))?;
+        db.execute(
+            "DELETE FROM config WHERE key IN ('account_id', 'account_name')",
+            [],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn preference(&self, key: &str) -> AppResult<Option<String>> {
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| AppError::Message("Local database lock failed.".into()))?;
+        get_config(&db, key)
+    }
+
+    pub(crate) fn set_preference(&self, key: &str, value: &str) -> AppResult<()> {
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| AppError::Message("Local database lock failed.".into()))?;
+        set_config(&db, key, value)
+    }
 }
 
 async fn sync_snapshot(
-    state: &State<'_, AppStateInner>,
+    state: &Backend,
     token: &str,
     account: &Account,
     range: &str,
@@ -651,17 +672,16 @@ async fn sync_snapshot(
 ) -> AppResult<DashboardSnapshot> {
     let normalized_range = normalize_range(range);
 
-    if !force_refresh {
-        if let Some(snapshot) = read_fresh_snapshot(state, account, normalized_range)? {
-            return Ok(snapshot);
-        }
+    if !force_refresh && let Some(snapshot) = read_fresh_snapshot(state, account, normalized_range)?
+    {
+        return Ok(snapshot);
     }
 
     collect_snapshot(state, token, account, normalized_range).await
 }
 
 async fn collect_snapshot(
-    state: &State<'_, AppStateInner>,
+    state: &Backend,
     token: &str,
     account: &Account,
     normalized_range: &str,
@@ -1225,7 +1245,7 @@ async fn collect_logpush(
     let mut zone_failures = 0usize;
     let mut zone_successes = 0usize;
 
-    match cf_get_paged_result_items(
+    if let Ok(items) = cf_get_paged_result_items(
         client,
         token,
         &format!("/accounts/{}/logpush/jobs", account.id),
@@ -1233,8 +1253,7 @@ async fn collect_logpush(
     )
     .await
     {
-        Ok(items) => jobs.extend(parse_logpush_jobs(&result_items_value(items), "account")),
-        Err(_) => {}
+        jobs.extend(parse_logpush_jobs(&result_items_value(items), "account"));
     }
 
     for zone in zones {
@@ -1274,6 +1293,7 @@ async fn collect_logpush(
     summarize_logpush(jobs)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn collect_workers_observability(
     client: &Client,
     token: &str,
@@ -2450,10 +2470,10 @@ fn parse_zone_traffic(
         }
     }
 
-    if summary.requests > 0 {
-        if let Some(cached) = cached {
-            summary.cache_hit_ratio = Some(cached / summary.requests as f64);
-        }
+    if summary.requests > 0
+        && let Some(cached) = cached
+    {
+        summary.cache_hit_ratio = Some(cached / summary.requests as f64);
     }
 }
 
@@ -3596,7 +3616,7 @@ fn write_token(token: &str) -> AppResult<()> {
     Ok(())
 }
 
-fn read_account(state: &State<'_, AppStateInner>) -> AppResult<Option<Account>> {
+fn read_account(state: &Backend) -> AppResult<Option<Account>> {
     let db = state
         .db
         .lock()
@@ -3609,7 +3629,7 @@ fn read_account(state: &State<'_, AppStateInner>) -> AppResult<Option<Account>> 
     })
 }
 
-fn write_account(state: &State<'_, AppStateInner>, account: &Account) -> AppResult<()> {
+fn write_account(state: &Backend, account: &Account) -> AppResult<()> {
     let db = state
         .db
         .lock()
@@ -3639,7 +3659,7 @@ fn set_config(db: &Connection, key: &str, value: &str) -> AppResult<()> {
 }
 
 fn save_snapshot(
-    state: &State<'_, AppStateInner>,
+    state: &Backend,
     account: &Account,
     snapshot: &DashboardSnapshot,
 ) -> AppResult<()> {
@@ -3668,7 +3688,7 @@ fn save_snapshot(
 }
 
 fn read_fresh_snapshot(
-    state: &State<'_, AppStateInner>,
+    state: &Backend,
     account: &Account,
     range: &str,
 ) -> AppResult<Option<DashboardSnapshot>> {
@@ -3680,7 +3700,7 @@ fn read_fresh_snapshot(
 }
 
 fn read_latest_snapshot(
-    state: &State<'_, AppStateInner>,
+    state: &Backend,
     account: &Account,
     range: &str,
 ) -> AppResult<Option<DashboardSnapshot>> {
@@ -3753,6 +3773,11 @@ fn open_database() -> AppResult<Connection> {
     dir.push("cedar.sqlite3");
 
     let db = Connection::open(dir)?;
+    initialize_database(&db)?;
+    Ok(db)
+}
+
+fn initialize_database(db: &Connection) -> AppResult<()> {
     db.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS config (
@@ -3770,12 +3795,28 @@ fn open_database() -> AppResult<Connection> {
           ON snapshots (account_id, range_key, generated_at DESC);
         ",
     )?;
-    Ok(db)
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visual_qa_backend_keeps_preferences_in_memory() {
+        let backend = Backend::new_visual_qa().expect("visual QA backend should initialize");
+
+        backend
+            .set_preference("visual-qa", "isolated")
+            .expect("in-memory preference should save");
+
+        assert_eq!(
+            backend
+                .preference("visual-qa")
+                .expect("preference should load"),
+            Some("isolated".into())
+        );
+    }
 
     fn utc(value: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(value)
@@ -3988,33 +4029,4 @@ mod tests {
             3
         );
     }
-}
-
-pub fn run() {
-    let db = open_database().expect("failed to open local app database");
-    let client = Client::builder()
-        .user_agent("cedar/0.1")
-        .build()
-        .expect("failed to build HTTP client");
-
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .manage(AppStateInner {
-            db: Mutex::new(db),
-            client,
-        })
-        .invoke_handler(tauri::generate_handler![
-            get_connection,
-            get_cached_snapshot,
-            discover_accounts,
-            connect_cloudflare,
-            sync_cloudflare,
-            clear_connection
-        ])
-        .setup(|app| {
-            let _ = app.path().app_data_dir().map(fs::create_dir_all);
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running Cedar");
 }

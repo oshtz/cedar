@@ -8,51 +8,64 @@ on:
 permissions:
   contents: read
 
-jobs:
-  validate:
-    runs-on: windows-latest
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: Windows validation
+    runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/checkout@v6
         with:
-          node-version: 22
-          cache: npm
+          persist-credentials: false
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt,clippy
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
 
-      - name: Release metadata check
-        run: npm run release:check
-
-      - name: Frontend lint
-        run: npm run lint
-
-      - name: Frontend tests
-        run: npm test
-
-      - name: Frontend build
-        run: npm run build
-
-      - name: Dependency audit
-        run: npm audit --audit-level=high
-
-      - name: Rust format
+      - name: Format
         run: cargo fmt --check
-        working-directory: src-tauri
 
-      - name: Rust tests
-        run: cargo test
-        working-directory: src-tauri
+      - name: Tests
+        run: cargo test --locked
 
-      - name: Rust check
-        run: cargo check
-        working-directory: src-tauri
+      - name: Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Release build
+        run: cargo build --release --locked
+
+      - name: Native GPUI startup smoke
+        shell: pwsh
+        run: ./scripts/smoke-windows.ps1 -Path target/release/cedar.exe
+
+  macos:
+    name: macOS compile and test
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check native app
+        run: cargo check --locked
+
+      - name: Tests
+        run: cargo test --locked

@@ -53,30 +53,38 @@ if (-not $password) {
   throw "WINDOWS_CODESIGN_PASSWORD is required when WINDOWS_CODESIGN_CERTIFICATE is set."
 }
 
-$pfxPath = Join-Path $env:RUNNER_TEMP "cedar-windows-codesign.pfx"
-[IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($certificate))
-$signtool = Find-SignTool
+$temporaryRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
+$pfxPath = Join-Path $temporaryRoot "cedar-windows-codesign-$([guid]::NewGuid().ToString('N')).pfx"
+try {
+  [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($certificate))
+  $signtool = Find-SignTool
 
-foreach ($item in $Path) {
-  $resolved = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($item)
-  if (-not (Test-Path -LiteralPath $resolved)) {
-    throw "Cannot sign missing file: $resolved"
+  foreach ($item in $Path) {
+    $resolved = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($item)
+    if (-not (Test-Path -LiteralPath $resolved)) {
+      throw "Cannot sign missing file: $resolved"
+    }
+
+    & $signtool sign /f $pfxPath /p $password /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 $resolved
+    if ($LASTEXITCODE -ne 0) {
+      throw "signtool sign failed for $resolved."
+    }
+
+    & $signtool verify /pa /v $resolved
+    if ($LASTEXITCODE -ne 0) {
+      throw "signtool verify failed for $resolved."
+    }
+
+    $signature = Get-AuthenticodeSignature -LiteralPath $resolved
+    if ($signature.Status -ne "Valid") {
+      throw "Authenticode signature is $($signature.Status) for $resolved."
+    }
+
+    Write-Host "Signed and verified: $resolved"
   }
-
-  & $signtool sign /f $pfxPath /p $password /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 $resolved
-  if ($LASTEXITCODE -ne 0) {
-    throw "signtool sign failed for $resolved."
+}
+finally {
+  if (Test-Path -LiteralPath $pfxPath) {
+    Remove-Item -LiteralPath $pfxPath -Force
   }
-
-  & $signtool verify /pa /v $resolved
-  if ($LASTEXITCODE -ne 0) {
-    throw "signtool verify failed for $resolved."
-  }
-
-  $signature = Get-AuthenticodeSignature -LiteralPath $resolved
-  if ($signature.Status -ne "Valid") {
-    throw "Authenticode signature is $($signature.Status) for $resolved."
-  }
-
-  Write-Host "Signed and verified: $resolved"
 }
