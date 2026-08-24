@@ -9,7 +9,7 @@ mod design;
 mod ui;
 mod updater;
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use gpui::{Application, AssetSource, SharedString};
 
@@ -81,10 +81,23 @@ fn main() {
         };
         match result {
             Ok(()) => {
-                if visual_qa.is_none()
-                    && let Err(error) = updater::complete_update_health()
-                {
-                    eprintln!("failed to report a healthy Cedar update: {error:#}");
+                if visual_qa.is_none() {
+                    match updater::complete_update_health() {
+                        Ok(()) => match updater::stage_executable_name_migration() {
+                            Ok(true) => {
+                                std::thread::sleep(Duration::from_millis(750));
+                                cx.quit();
+                                return;
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                eprintln!("failed to migrate Cedar's executable name: {error:#}");
+                            }
+                        },
+                        Err(error) => {
+                            eprintln!("failed to report a healthy Cedar update: {error:#}");
+                        }
+                    }
                 }
             }
             Err(error) => {

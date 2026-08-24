@@ -77,12 +77,15 @@ in the release path.
 
 Release assets:
 
-- `Cedar_<version>_windows-x64.exe`
-- `Cedar_<version>_windows-x64.zip`
+- `Cedar.exe`
+- `Cedar_windows-x64.zip`
 - `SHA256SUMS-windows.txt`
-- `Cedar_<version>_macos.dmg`
-- `Cedar_<version>_macos.app.zip`
+- `Cedar_macos.dmg`
+- `Cedar_macos.app.zip`
 - `SHA256SUMS-macos.txt`
+
+Releases also include byte-identical versioned Windows executable and macOS app-archive aliases so
+older Cedar updaters remain compatible. New versions consume the stable filenames above.
 
 See [RELEASING.md](RELEASING.md) for the tag, signing, notarization, verification, and publishing
 checklist.

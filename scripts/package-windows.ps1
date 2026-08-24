@@ -34,15 +34,18 @@ try {
   }
 
   New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
-  $standaloneName = "Cedar_${version}_windows-x64.exe"
-  $zipName = "Cedar_${version}_windows-x64.zip"
+  $standaloneName = "Cedar.exe"
+  $zipName = "Cedar_windows-x64.zip"
+  $legacyUpdaterName = "Cedar_${version}_windows-x64.exe"
   $checksumName = "SHA256SUMS-windows.txt"
   $standalonePath = Join-Path $releaseDirectory $standaloneName
   $zipPath = Join-Path $releaseDirectory $zipName
+  $legacyUpdaterPath = Join-Path $releaseDirectory $legacyUpdaterName
   $checksumPath = Join-Path $releaseDirectory $checksumName
 
   Get-ChildItem -LiteralPath $releaseDirectory -File | Where-Object {
-    $_.Name -match '^Cedar_.+_windows-x64\.(exe|zip)$' -or $_.Name -eq $checksumName
+    $_.Name -match '^Cedar_.+_windows-x64\.(exe|zip)$' -or
+    $_.Name -in @($standaloneName, $zipName, $checksumName)
   } | ForEach-Object {
     Remove-Item -LiteralPath $_.FullName -Force
   }
@@ -53,6 +56,7 @@ try {
     $signArguments.Require = $true
   }
   & (Join-Path $PSScriptRoot "windows-sign.ps1") @signArguments
+  Copy-Item -LiteralPath $standalonePath -Destination $legacyUpdaterPath
 
   $stagingDirectory = Join-Path ([IO.Path]::GetTempPath()) "cedar-package-$([guid]::NewGuid().ToString('N'))"
   try {
@@ -68,7 +72,7 @@ try {
     }
   }
 
-  $checksumLines = @($standalonePath, $zipPath) | ForEach-Object {
+  $checksumLines = @($standalonePath, $zipPath, $legacyUpdaterPath) | ForEach-Object {
     $item = Get-Item -LiteralPath $_
     "{0}  {1}" -f (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $item.Name
   }

@@ -24,28 +24,30 @@ if (-not $Version) {
 }
 
 $releaseDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Directory)
-$standaloneName = "Cedar_${Version}_windows-x64.exe"
-$zipName = "Cedar_${Version}_windows-x64.zip"
+$standaloneName = "Cedar.exe"
+$zipName = "Cedar_windows-x64.zip"
+$legacyUpdaterName = "Cedar_${Version}_windows-x64.exe"
 $checksumName = "SHA256SUMS-windows.txt"
 $standalonePath = Join-Path $releaseDirectory $standaloneName
 $zipPath = Join-Path $releaseDirectory $zipName
+$legacyUpdaterPath = Join-Path $releaseDirectory $legacyUpdaterName
 $checksumPath = Join-Path $releaseDirectory $checksumName
 
-foreach ($path in @($standalonePath, $zipPath, $checksumPath)) {
+foreach ($path in @($standalonePath, $zipPath, $legacyUpdaterPath, $checksumPath)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
     throw "Missing release artifact: $path"
   }
 }
 
-$expectedNames = @($standaloneName, $zipName, $checksumName) | Sort-Object
+$expectedNames = @($standaloneName, $zipName, $legacyUpdaterName, $checksumName) | Sort-Object
 $actualNames = Get-ChildItem -LiteralPath $releaseDirectory -File | Select-Object -ExpandProperty Name | Sort-Object
 if (Compare-Object $expectedNames $actualNames) {
   throw "Windows release directory contains an unexpected artifact set: $($actualNames -join ', ')"
 }
 
 $checksumLines = @(Get-Content -LiteralPath $checksumPath | Where-Object { $_.Trim() })
-if ($checksumLines.Count -ne 2) {
-  throw "Expected two entries in $checksumName, found $($checksumLines.Count)."
+if ($checksumLines.Count -ne 3) {
+  throw "Expected three entries in $checksumName, found $($checksumLines.Count)."
 }
 
 $recorded = @{}
@@ -56,12 +58,18 @@ foreach ($line in $checksumLines) {
   $recorded[$Matches[2]] = $Matches[1].ToLowerInvariant()
 }
 
-foreach ($name in @($standaloneName, $zipName)) {
+foreach ($name in @($standaloneName, $zipName, $legacyUpdaterName)) {
   $path = Join-Path $releaseDirectory $name
   $actualHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($recorded[$name] -ne $actualHash) {
     throw "SHA-256 mismatch for $name."
   }
+}
+
+$legacyUpdaterHash = (Get-FileHash -LiteralPath $legacyUpdaterPath -Algorithm SHA256).Hash
+$standaloneHash = (Get-FileHash -LiteralPath $standalonePath -Algorithm SHA256).Hash
+if ($legacyUpdaterHash -ne $standaloneHash) {
+  throw "$legacyUpdaterName differs from the canonical $standaloneName updater asset."
 }
 
 if ($RequireSignature) {
@@ -90,6 +98,7 @@ try {
   if (-not $SkipSmokeTest) {
     & (Join-Path $PSScriptRoot "smoke-windows.ps1") -Path $zippedExecutable
     & (Join-Path $PSScriptRoot "smoke-window-controls.ps1") -Path $zippedExecutable
+    & (Join-Path $PSScriptRoot "smoke-executable-name-migration.ps1") -Path $standalonePath
   }
 }
 finally {

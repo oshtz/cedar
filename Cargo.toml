@@ -1,6 +1,6 @@
 [package]
 name = "cedar"
-version = "0.2.3"
+version = "0.2.4"
 description = "A local-first Cloudflare operations console"
 authors = ["Cedar"]
 edition = "2024"
