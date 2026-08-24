@@ -100,7 +100,7 @@ async fn update_for_release(
     }
 
     let version_text = version.to_string();
-    let asset_name = package_asset_name(&version_text)?;
+    let asset_name = package_asset_name()?.to_owned();
     let checksum_name = checksum_asset_name()?;
     let asset = find_asset(release, &asset_name)?;
     if asset.size.is_some_and(|size| size > MAX_PACKAGE_BYTES) {
@@ -277,11 +277,11 @@ fn parse_release_version(tag: &str) -> Result<Version> {
         .with_context(|| format!("GitHub release tag {tag:?} is not semantic versioning"))
 }
 
-fn package_asset_name(version: &str) -> Result<String> {
+fn package_asset_name() -> Result<&'static str> {
     if cfg!(windows) {
-        Ok(format!("Cedar_{version}_windows-x64.exe"))
+        Ok("Cedar.exe")
     } else if cfg!(target_os = "macos") {
-        Ok(format!("Cedar_{version}_macos.app.zip"))
+        Ok("Cedar_macos.app.zip")
     } else {
         bail!("Automatic updates are unsupported on this platform.")
     }
@@ -489,7 +489,7 @@ pub(crate) fn stage_install(download: &DownloadedUpdate) -> Result<()> {
     if !source.starts_with(&update_root) {
         bail!("The update source must remain inside Cedar's update directory.");
     }
-    let target = std::env::current_exe().context("Cedar's executable could not be resolved")?;
+    let current = std::env::current_exe().context("Cedar's executable could not be resolved")?;
     let nonce = format!(
         "{}-{}",
         std::process::id(),
@@ -512,7 +512,13 @@ pub(crate) fn stage_install(download: &DownloadedUpdate) -> Result<()> {
         {
             bail!("Windows updates must be executable files.");
         }
-        let backup = target.with_extension("exe.previous");
+        let target = windows_install_target(&current);
+        if target != current && target.exists() {
+            bail!(
+                "Cedar.exe already exists beside this legacy executable. Move or remove it before installing the update."
+            );
+        }
+        let backup = current.with_extension("exe.previous");
         let log = update_root.join("install.log");
         let recovery_error = update_root.join("install-error.txt");
         let script_path = update_root.join("apply-update.ps1");
@@ -532,6 +538,7 @@ pub(crate) fn stage_install(download: &DownloadedUpdate) -> Result<()> {
             .arg(&script_path)
             .env("CEDAR_UPDATE_PID", std::process::id().to_string())
             .env("CEDAR_UPDATE_SOURCE", source)
+            .env("CEDAR_UPDATE_CURRENT", current)
             .env("CEDAR_UPDATE_TARGET", target)
             .env("CEDAR_UPDATE_BACKUP", backup)
             .env("CEDAR_UPDATE_LOG", log)
@@ -552,7 +559,7 @@ pub(crate) fn stage_install(download: &DownloadedUpdate) -> Result<()> {
             .ancestors()
             .find(|path| path.extension().is_some_and(|value| value == "app"))
             .ok_or_else(|| anyhow!("The macOS update did not contain an app bundle."))?;
-        let target_app = target
+        let target_app = current
             .ancestors()
             .find(|path| path.extension().is_some_and(|value| value == "app"))
             .ok_or_else(|| anyhow!("Cedar's current app bundle could not be resolved."))?;
@@ -581,6 +588,81 @@ pub(crate) fn stage_install(download: &DownloadedUpdate) -> Result<()> {
 
     #[cfg(not(any(windows, target_os = "macos")))]
     bail!("Automatic update installation is unsupported on this platform.")
+}
+
+#[cfg(windows)]
+fn windows_install_target(current: &Path) -> PathBuf {
+    let Some(file_name) = current.file_name().and_then(|name| name.to_str()) else {
+        return current.to_owned();
+    };
+    let lower = file_name.to_ascii_lowercase();
+    if lower == "cedar.exe" {
+        current.to_owned()
+    } else if lower
+        .strip_prefix("cedar_")
+        .and_then(|name| name.strip_suffix("_windows-x64.exe"))
+        .is_some_and(|version| Version::parse(version).is_ok())
+    {
+        current.with_file_name("Cedar.exe")
+    } else {
+        current.to_owned()
+    }
+}
+
+pub(crate) fn stage_executable_name_migration() -> Result<bool> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        if std::env::var_os("CEDAR_SKIP_NAME_MIGRATION").is_some() {
+            return Ok(false);
+        }
+        let current =
+            std::env::current_exe().context("Cedar's executable could not be resolved")?;
+        let target = windows_install_target(&current);
+        if target == current {
+            return Ok(false);
+        }
+        if target.exists() {
+            bail!(
+                "Cedar.exe already exists beside this legacy executable, so Cedar kept the current filename."
+            );
+        }
+
+        let update_root = update_dir()?;
+        fs::create_dir_all(&update_root).context("Could not create Cedar's update directory")?;
+        let script_path = update_root.join("migrate-executable-name.ps1");
+        fs::write(&script_path, WINDOWS_NAME_MIGRATION_SCRIPT)
+            .context("Could not prepare Cedar's executable-name migration")?;
+        let mut command = Command::new("powershell.exe");
+        command
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-File",
+            ])
+            .arg(&script_path)
+            .env("CEDAR_MIGRATION_PID", std::process::id().to_string())
+            .env("CEDAR_MIGRATION_CURRENT", current)
+            .env("CEDAR_MIGRATION_TARGET", target)
+            .env("CEDAR_MIGRATION_SCRIPT", &script_path)
+            .env("CEDAR_MIGRATION_LOG", update_root.join("install.log"))
+            .env_remove("CEDAR_UPDATE_HEALTH_PATH")
+            .env_remove("CEDAR_UPDATE_HEALTH_NONCE")
+            .env_remove("CEDAR_SKIP_NAME_MIGRATION")
+            .creation_flags(0x0800_0000);
+        command
+            .spawn()
+            .context("Could not start Cedar's executable-name migration")?;
+        Ok(true)
+    }
+
+    #[cfg(not(windows))]
+    Ok(false)
 }
 
 pub(crate) fn complete_update_health() -> Result<()> {
@@ -615,6 +697,7 @@ const WINDOWS_INSTALL_SCRIPT: &str = r#"param([switch]$Elevated)
 $ErrorActionPreference = 'Stop'
 $procId = [int]$env:CEDAR_UPDATE_PID
 $replacement = $env:CEDAR_UPDATE_SOURCE
+$current = $env:CEDAR_UPDATE_CURRENT
 $target = $env:CEDAR_UPDATE_TARGET
 $backup = $env:CEDAR_UPDATE_BACKUP
 $log = $env:CEDAR_UPDATE_LOG
@@ -624,7 +707,10 @@ while (Get-Process -Id $procId -ErrorAction SilentlyContinue) { Start-Sleep -Mil
 for ($attempt = 1; $attempt -le 3; $attempt++) {
   try {
     Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
-    Move-Item -LiteralPath $target -Destination $backup -Force
+    if (-not [String]::Equals($current, $target, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $target)) {
+      throw 'Cedar.exe already exists beside the legacy executable.'
+    }
+    Move-Item -LiteralPath $current -Destination $backup -Force
     Move-Item -LiteralPath $replacement -Destination $target -Force
     $updated = Start-Process -FilePath $target -PassThru
     $deadline = (Get-Date).AddSeconds(20)
@@ -651,12 +737,12 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
     Add-Content -LiteralPath $log -Value "$(Get-Date -Format s) attempt $attempt failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $backup) {
       Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
-      Move-Item -LiteralPath $backup -Destination $target -Force
+      Move-Item -LiteralPath $backup -Destination $current -Force
       Set-Content -LiteralPath $recoveryError -Value 'The update failed and the previous version was restored.' -Encoding UTF8 -ErrorAction SilentlyContinue
       Remove-Item -LiteralPath $env:CEDAR_UPDATE_HEALTH_PATH -Force -ErrorAction SilentlyContinue
       Remove-Item Env:\CEDAR_UPDATE_HEALTH_PATH -ErrorAction SilentlyContinue
       Remove-Item Env:\CEDAR_UPDATE_HEALTH_NONCE -ErrorAction SilentlyContinue
-      Start-Process -FilePath $target
+      Start-Process -FilePath $current
       Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
       exit 1
     }
@@ -675,7 +761,45 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
   }
 }
 Set-Content -LiteralPath $recoveryError -Value 'The update could not be installed. The previous version is still in use.' -Encoding UTF8 -ErrorAction SilentlyContinue
-if (Test-Path -LiteralPath $target) { Start-Process -FilePath $target }
+if (Test-Path -LiteralPath $current) { Start-Process -FilePath $current }
+Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
+exit 1
+"#;
+
+#[cfg(windows)]
+const WINDOWS_NAME_MIGRATION_SCRIPT: &str = r#"param([switch]$Elevated)
+$ErrorActionPreference = 'Stop'
+$procId = [int]$env:CEDAR_MIGRATION_PID
+$current = $env:CEDAR_MIGRATION_CURRENT
+$target = $env:CEDAR_MIGRATION_TARGET
+$scriptPath = $env:CEDAR_MIGRATION_SCRIPT
+$log = $env:CEDAR_MIGRATION_LOG
+while (Get-Process -Id $procId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 200 }
+try {
+  if (Test-Path -LiteralPath $target) { throw 'Cedar.exe already exists beside the legacy executable.' }
+  Move-Item -LiteralPath $current -Destination $target
+  Start-Process -FilePath $target
+  Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
+  exit 0
+} catch {
+  Add-Content -LiteralPath $log -Value "$(Get-Date -Format s) executable-name migration failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue
+  if (-not $Elevated) {
+    try {
+      Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden -ArgumentList @(
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+        '-File', "`"$scriptPath`"", '-Elevated'
+      )
+      exit 0
+    } catch {
+      Add-Content -LiteralPath $log -Value "$(Get-Date -Format s) executable-name migration elevation failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue
+    }
+  }
+}
+if (-not (Test-Path -LiteralPath $current) -and (Test-Path -LiteralPath $target)) {
+  Move-Item -LiteralPath $target -Destination $current -Force -ErrorAction SilentlyContinue
+}
+$env:CEDAR_SKIP_NAME_MIGRATION = '1'
+if (Test-Path -LiteralPath $current) { Start-Process -FilePath $current }
 Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
 exit 1
 "#;
@@ -725,23 +849,19 @@ mod tests {
     #[test]
     fn checksum_parser_requires_the_exact_asset() {
         let expected = "a".repeat(64);
-        let manifest = format!(
-            "{}  Cedar_1.2.3_windows-x64.exe\n{}  other.zip",
-            expected,
-            "b".repeat(64)
-        );
+        let manifest = format!("{}  Cedar.exe\n{}  other.zip", expected, "b".repeat(64));
         assert_eq!(
-            checksum_for_asset(&manifest, "Cedar_1.2.3_windows-x64.exe").unwrap(),
+            checksum_for_asset(&manifest, "Cedar.exe").unwrap(),
             expected
         );
-        assert!(checksum_for_asset(&manifest, "Cedar_1.2.4_windows-x64.exe").is_err());
+        assert!(checksum_for_asset(&manifest, "Cedar_windows-x64.zip").is_err());
     }
 
     #[test]
     fn update_urls_are_scoped_to_cedar_releases() {
         assert!(
             validate_download_url(
-                "https://github.com/oshtz/cedar/releases/download/v1.2.3/Cedar_1.2.3_windows-x64.exe"
+                "https://github.com/oshtz/cedar/releases/download/v1.2.3/Cedar.exe"
             )
             .is_ok()
         );
@@ -750,6 +870,43 @@ mod tests {
         );
         assert!(
             validate_download_url("https://github.com/other/cedar/releases/download/v1/a").is_err()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_updater_uses_the_stable_asset_name() {
+        assert_eq!(package_asset_name().unwrap(), "Cedar.exe");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_updater_uses_the_stable_asset_name() {
+        assert_eq!(package_asset_name().unwrap(), "Cedar_macos.app.zip");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn legacy_windows_release_names_migrate_to_cedar_exe() {
+        assert_eq!(
+            windows_install_target(Path::new(r"C:\Downloads\Cedar_0.2.3_windows-x64.exe")),
+            PathBuf::from(r"C:\Downloads\Cedar.exe")
+        );
+        assert_eq!(
+            windows_install_target(Path::new(r"C:\Downloads\Cedar.exe")),
+            PathBuf::from(r"C:\Downloads\Cedar.exe")
+        );
+        assert_eq!(
+            windows_install_target(Path::new(r"C:\Downloads\cedar.exe")),
+            PathBuf::from(r"C:\Downloads\cedar.exe")
+        );
+        assert_eq!(
+            windows_install_target(Path::new(r"C:\Downloads\Cedar-custom.exe")),
+            PathBuf::from(r"C:\Downloads\Cedar-custom.exe")
+        );
+        assert_eq!(
+            windows_install_target(Path::new(r"C:\Downloads\Cedar_custom_windows-x64.exe")),
+            PathBuf::from(r"C:\Downloads\Cedar_custom_windows-x64.exe")
         );
     }
 

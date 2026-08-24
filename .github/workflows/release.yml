@@ -120,8 +120,9 @@ jobs:
         with:
           name: cedar-windows-release
           path: |
+            dist-release/windows/Cedar.exe
+            dist-release/windows/Cedar_windows-x64.zip
             dist-release/windows/Cedar_*_windows-x64.exe
-            dist-release/windows/Cedar_*_windows-x64.zip
             dist-release/windows/SHA256SUMS-windows.txt
           if-no-files-found: error
           retention-days: 14
@@ -221,20 +222,21 @@ jobs:
           xcrun stapler validate "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
 
-          ditto -c -k --keepParent "$APP" "$OUT/Cedar_${VERSION}_macos.app.zip"
+          ditto -c -k --keepParent "$APP" "$OUT/Cedar_macos.app.zip"
+          cp "$OUT/Cedar_macos.app.zip" "$OUT/Cedar_${VERSION}_macos.app.zip"
           STAGING="$RUNNER_TEMP/cedar-dmg"
           mkdir -p "$STAGING"
           cp -R "$APP" "$STAGING/Cedar.app"
           ln -s /Applications "$STAGING/Applications"
-          hdiutil create -volname Cedar -srcfolder "$STAGING" -ov -format UDZO "$OUT/Cedar_${VERSION}_macos.dmg"
-          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$OUT/Cedar_${VERSION}_macos.dmg"
-          xcrun notarytool submit "$OUT/Cedar_${VERSION}_macos.dmg" --keychain-profile cedar-release --wait
-          xcrun stapler staple "$OUT/Cedar_${VERSION}_macos.dmg"
-          xcrun stapler validate "$OUT/Cedar_${VERSION}_macos.dmg"
-          spctl --assess --type open --context context:primary-signature --verbose=2 "$OUT/Cedar_${VERSION}_macos.dmg"
+          hdiutil create -volname Cedar -srcfolder "$STAGING" -ov -format UDZO "$OUT/Cedar_macos.dmg"
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$OUT/Cedar_macos.dmg"
+          xcrun notarytool submit "$OUT/Cedar_macos.dmg" --keychain-profile cedar-release --wait
+          xcrun stapler staple "$OUT/Cedar_macos.dmg"
+          xcrun stapler validate "$OUT/Cedar_macos.dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$OUT/Cedar_macos.dmg"
 
           cd "$OUT"
-          shasum -a 256 Cedar_*_macos.dmg Cedar_*_macos.app.zip > SHA256SUMS-macos.txt
+          shasum -a 256 Cedar_macos.dmg Cedar_macos.app.zip "Cedar_${VERSION}_macos.app.zip" > SHA256SUMS-macos.txt
           shasum -a 256 -c SHA256SUMS-macos.txt
 
       - name: Upload macOS release artifacts
@@ -242,7 +244,8 @@ jobs:
         with:
           name: cedar-macos-release
           path: |
-            dist-release/macos/Cedar_*_macos.dmg
+            dist-release/macos/Cedar_macos.dmg
+            dist-release/macos/Cedar_macos.app.zip
             dist-release/macos/Cedar_*_macos.app.zip
             dist-release/macos/SHA256SUMS-macos.txt
           if-no-files-found: error
@@ -276,10 +279,12 @@ jobs:
         run: |
           set -euo pipefail
           expected=(
+            "Cedar.exe"
+            "Cedar_windows-x64.zip"
             "Cedar_${CEDAR_VERSION}_windows-x64.exe"
-            "Cedar_${CEDAR_VERSION}_windows-x64.zip"
             "SHA256SUMS-windows.txt"
-            "Cedar_${CEDAR_VERSION}_macos.dmg"
+            "Cedar_macos.dmg"
+            "Cedar_macos.app.zip"
             "Cedar_${CEDAR_VERSION}_macos.app.zip"
             "SHA256SUMS-macos.txt"
           )
@@ -287,6 +292,8 @@ jobs:
             test -f "dist-release/$file" || { echo "::error::Missing release artifact $file"; exit 1; }
           done
           test "$(find dist-release -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq "${#expected[@]}"
+          cmp -s dist-release/Cedar.exe "dist-release/Cedar_${CEDAR_VERSION}_windows-x64.exe"
+          cmp -s dist-release/Cedar_macos.app.zip "dist-release/Cedar_${CEDAR_VERSION}_macos.app.zip"
           (cd dist-release && sha256sum --check SHA256SUMS-windows.txt)
           (cd dist-release && sha256sum --check SHA256SUMS-macos.txt)
 

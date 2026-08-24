@@ -14,10 +14,11 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1
 ```
 
-The packager writes exactly three files to `dist-release/windows/`:
+The packager writes exactly four files to `dist-release/windows/`:
 
-- `Cedar_<version>_windows-x64.exe`
-- `Cedar_<version>_windows-x64.zip`
+- `Cedar.exe`
+- `Cedar_windows-x64.zip`
+- `Cedar_<version>_windows-x64.exe` (legacy updater alias)
 - `SHA256SUMS-windows.txt`
 
 Re-run artifact verification without rebuilding:
@@ -27,7 +28,8 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-windows-release.ps1
 ```
 
 The verifier checks the exact file set, SHA-256 manifest, zip contents, executable identity, version
-output, and a short launch of the packaged GPUI application.
+output, a short launch of the packaged GPUI application, and migration from a legacy versioned
+executable to `Cedar.exe`.
 
 ## GitHub configuration
 
@@ -58,8 +60,11 @@ Cedar checks the latest published release from `oshtz/cedar`. Automatic checks a
 default in release builds and can be disabled in Settings. Installation always remains a user
 action.
 
-- Windows updates use `Cedar_<version>_windows-x64.exe` and `SHA256SUMS-windows.txt`.
-- macOS updates use `Cedar_<version>_macos.app.zip` and `SHA256SUMS-macos.txt`.
+- Windows updates use `Cedar.exe` and `SHA256SUMS-windows.txt`.
+- macOS updates use `Cedar_macos.app.zip` and `SHA256SUMS-macos.txt`.
+- Releases retain byte-identical `Cedar_<version>_windows-x64.exe` and
+  `Cedar_<version>_macos.app.zip` aliases so Cedar versions that predate the stable-name contract
+  can still discover and install current updates.
 - Asset URLs must be HTTPS downloads from this repository's GitHub Releases.
 - Downloads are limited to 512 MiB and must match both GitHub's recorded size and the exact
   SHA-256 manifest entry.
@@ -69,9 +74,13 @@ action.
 - The installer keeps the previous executable or app bundle until the replacement opens a GPUI
   window and reports healthy. If that does not happen within 20 seconds, Cedar restores and
   relaunches the previous version.
+- On Windows, a legacy versioned executable safely migrates to `Cedar.exe` beside itself after a
+  healthy launch. Custom executable names are preserved, and migration never overwrites an
+  existing `Cedar.exe`.
 
-The asset names and manifests above are therefore a compatibility contract. Do not rename them or
-remove the standalone Windows executable / macOS app zip from future releases.
+The stable asset names, legacy updater aliases, and manifests above are therefore a compatibility
+contract. Do not rename them or remove either updater alias while releases predating this migration
+remain supported.
 
 ## Cut a release
 
