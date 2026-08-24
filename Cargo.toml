@@ -1,6 +1,6 @@
 [package]
 name = "cedar"
-version = "0.2.2"
+version = "0.2.3"
 description = "A local-first Cloudflare operations console"
 authors = ["Cedar"]
 edition = "2024"
@@ -24,9 +24,12 @@ sha2 = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 
 [target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
 windows = { version = "0.61.3", features = [
   "Win32_Foundation",
   "Win32_Security_WinTrust",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
 ] }
 
 [target.'cfg(windows)'.build-dependencies]

@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "cedar"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -811,6 +811,7 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "keyring",
+ "raw-window-handle",
  "reqwest",
  "rusqlite",
  "semver",

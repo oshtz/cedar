@@ -873,6 +873,41 @@ fn open_cedar_window(
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn start_window_drag(window: &Window) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows::Win32::{
+        Foundation::{HWND, WPARAM},
+        UI::{
+            Input::KeyboardAndMouse::ReleaseCapture,
+            WindowsAndMessaging::{HTCAPTION, SendMessageW, WM_NCLBUTTONDOWN},
+        },
+    };
+
+    let Ok(handle) = HasWindowHandle::window_handle(window) else {
+        return;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = HWND(handle.hwnd.get() as *mut _);
+
+    unsafe {
+        let _ = ReleaseCapture();
+        SendMessageW(
+            hwnd,
+            WM_NCLBUTTONDOWN,
+            Some(WPARAM(HTCAPTION as usize)),
+            None,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn start_window_drag(window: &Window) {
+    window.start_window_move();
+}
+
 struct CedarApp {
     backend: Arc<Backend>,
     runtime: Arc<Runtime>,
@@ -2926,10 +2961,14 @@ impl CedarApp {
                     .items_center()
                     .gap_2()
                     .pl_3()
-                    .window_control_area(WindowControlArea::Drag)
+                    .when(!cfg!(target_os = "windows"), |this| {
+                        this.window_control_area(WindowControlArea::Drag)
+                    })
                     .on_mouse_down(gpui::MouseButton::Left, |event, window, _| {
                         if event.click_count > 1 {
                             window.zoom_window();
+                        } else {
+                            start_window_drag(window);
                         }
                     })
                     .child(cedar_mark(20., palette, self.dark))
