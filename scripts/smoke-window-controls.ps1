@@ -27,6 +27,33 @@ public static class CedarWindowSmoke {
     public static extern bool GetClientRect(IntPtr hWnd, out Rect rect);
 
     [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out Rect rect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Point {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern bool ClientToScreen(IntPtr hWnd, ref Point point);
+
+    [DllImport("user32.dll")]
+    public static extern bool GetCursorPos(out Point point);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+
+    [DllImport("user32.dll")]
     public static extern bool IsIconic(IntPtr hWnd);
 
     [DllImport("user32.dll")]
@@ -53,6 +80,38 @@ function Send-CedarClick {
   [void][CedarWindowSmoke]::SendMessage($Window, 0x0202, [IntPtr]::Zero, $coordinates)
 }
 
+function Send-CedarDrag {
+  param(
+    [IntPtr]$Window,
+    [int]$X,
+    [int]$Y,
+    [int]$DeltaX,
+    [int]$DeltaY
+  )
+
+  $point = [CedarWindowSmoke+Point]::new()
+  $point.X = $X
+  $point.Y = $Y
+  if (-not [CedarWindowSmoke]::ClientToScreen($Window, [ref]$point)) {
+    throw "Could not translate Cedar's title-bar coordinates."
+  }
+
+  [void][CedarWindowSmoke]::SetWindowPos($Window, [IntPtr](-1), 0, 0, 0, 0, 0x0013)
+  try {
+    [void][CedarWindowSmoke]::SetForegroundWindow($Window)
+    [void][CedarWindowSmoke]::SetCursorPos($point.X, $point.Y)
+    Start-Sleep -Milliseconds 100
+    [CedarWindowSmoke]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 100
+    [void][CedarWindowSmoke]::SetCursorPos($point.X + $DeltaX, $point.Y + $DeltaY)
+    Start-Sleep -Milliseconds 250
+    [CedarWindowSmoke]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+  }
+  finally {
+    [void][CedarWindowSmoke]::SetWindowPos($Window, [IntPtr](-2), 0, 0, 0, 0, 0x0013)
+  }
+}
+
 function Wait-ForCondition {
   param(
     [scriptblock]$Condition,
@@ -71,6 +130,8 @@ function Wait-ForCondition {
 }
 
 $process = $null
+$originalCursor = [CedarWindowSmoke+Point]::new()
+[void][CedarWindowSmoke]::GetCursorPos([ref]$originalCursor)
 try {
   $process = Start-Process `
     -FilePath $executable `
@@ -103,6 +164,20 @@ try {
     throw "Cedar's client area is unexpectedly narrow: $clientWidth pixels."
   }
 
+  $windowBeforeDrag = [CedarWindowSmoke+Rect]::new()
+  if (-not [CedarWindowSmoke]::GetWindowRect($window, [ref]$windowBeforeDrag)) {
+    throw "Could not resolve Cedar's window position."
+  }
+  Send-CedarDrag -Window $window -X 300 -Y 17 -DeltaX 100 -DeltaY 60
+  Wait-ForCondition `
+    -Condition {
+      $windowAfterDrag = [CedarWindowSmoke+Rect]::new()
+      [void][CedarWindowSmoke]::GetWindowRect($window, [ref]$windowAfterDrag)
+      ([Math]::Abs($windowAfterDrag.Left - $windowBeforeDrag.Left) -ge 40) -or
+        ([Math]::Abs($windowAfterDrag.Top - $windowBeforeDrag.Top) -ge 40)
+    } `
+    -Failure "Dragging the custom title bar did not reposition Cedar."
+
   Send-CedarClick -Window $window -X ($clientWidth - 100) -Y 17
   Wait-ForCondition `
     -Condition { [CedarWindowSmoke]::IsIconic($window) } `
@@ -131,9 +206,10 @@ try {
     throw "The custom close button did not close Cedar."
   }
 
-  Write-Host "Verified Cedar's custom minimize, maximize, and close controls through native window messages."
+  Write-Host "Verified Cedar's custom title-bar dragging and minimize, maximize, and close controls."
 }
 finally {
+  [void][CedarWindowSmoke]::SetCursorPos($originalCursor.X, $originalCursor.Y)
   if ($process -and -not $process.HasExited) {
     Stop-Process -Id $process.Id -Force
     $process.WaitForExit()
